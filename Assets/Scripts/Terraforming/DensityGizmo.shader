@@ -8,10 +8,13 @@ Shader "Custom/DensityGizmo"
 
     SubShader
     {
-        Tags { "RenderType" = "Transparent" "RenderPipeline" = "UniversalPipeline" }
+        Tags { "RenderType" = "Transparent" "Queue" = "Transparent" "RenderPipeline" = "UniversalPipeline" }
 
         Pass
         {
+            Blend SrcAlpha OneMinusSrcAlpha
+            ZWrite Off
+            
             HLSLPROGRAM
             #pragma multi_compile_instancing
             #pragma vertex vert

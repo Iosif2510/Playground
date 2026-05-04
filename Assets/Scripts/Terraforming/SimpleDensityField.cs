@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace Terraforming
 {
-    public struct GizmoData
+    public struct FieldData
     {
         public float3 position;
         public float density;
@@ -12,12 +12,15 @@ namespace Terraforming
     public class SimpleDensityField : MonoBehaviour
     {
         private static readonly int GizmoBufferProperty = Shader.PropertyToID("_GizmoBuffer");
+        
+        [Header("Field Properties")]
         [SerializeField] private int resolution = 16;
         [SerializeField] private float unitSize = 1.0f;
-        [SerializeField] private float radius = 3f;
-        
         [SerializeField] private float refreshRate = 0.3f;
         private float timer = 0f;
+        
+        [Header("Sphere Shape Properties")]
+        [SerializeField] private float radius = 3f;
         
         [Header("Debug")]
         [SerializeField] private Mesh gizmoMesh;
@@ -28,12 +31,14 @@ namespace Terraforming
         private ComputeBuffer gizmoBuffer;
         private ComputeBuffer argsBuffer;
         
-        public GizmoData[] Instances { get; private set; }
+        public FieldData[] DensityField { get; private set; }
+        public int Resolution => resolution;
+        public float UnitSize => unitSize;
 
         public void InitializeField()
         {
             int count = resolution * resolution * resolution;
-            Instances = new GizmoData[count];
+            DensityField = new FieldData[count];
             
             CreateSimpleSphere(transform.position);
             InitializeGizmo();
@@ -45,7 +50,7 @@ namespace Terraforming
             bounds = new Bounds(transform.position, Vector3.one * (resolution * unitSize * 10));
             
             gizmoBuffer = new ComputeBuffer(count, sizeof(float) * 4);
-            gizmoBuffer.SetData(Instances);
+            gizmoBuffer.SetData(DensityField);
             
             gizmoMaterial.EnableKeyword("PROCEDURAL_INSTANCING_ON");
             gizmoMaterial.SetBuffer(GizmoBufferProperty, gizmoBuffer);
@@ -87,11 +92,11 @@ namespace Terraforming
                 var center = new float3(resolution / 2f, resolution / 2f, resolution / 2f);
                 var pos = (new float3(x, y, z) - center) * unitSize + position;
                 
-                Instances[i].position = pos;
-                Instances[i].density = math.length(pos - position) - radius;
+                DensityField[i].position = pos;
+                DensityField[i].density = math.length(pos - position) - radius;
             }
 
-            gizmoBuffer?.SetData(Instances);
+            gizmoBuffer?.SetData(DensityField);
         }
 
         private void OnDestroy()
