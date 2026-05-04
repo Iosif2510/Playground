@@ -47,7 +47,6 @@ namespace BadApple
             instancingMaterial.EnableKeyword("PROCEDURAL_INSTANCING_ON");
             instancingMaterial.SetBuffer(CubeBuffer, cubeBuffer);
             
-            // Graphics.DrawMeshInstancedProcedural(cubeMesh, 0, instancingMaterial, bounds, CubeCount);
             var renderParams = new RenderParams(instancingMaterial);
             renderParams.worldBounds = bounds;
             renderParams.layer = gameObject.layer;

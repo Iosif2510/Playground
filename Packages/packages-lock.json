@@ -1,20 +1,5 @@
 {
   "dependencies": {
-    "com.2510.simplemeshoutline": {
-      "version": "file:com.2510.simplemeshoutline",
-      "depth": 0,
-      "source": "embedded",
-      "dependencies": {}
-    },
-    "com.cysharp.r3": {
-      "version": "https://github.com/Cysharp/R3.git?path=src/R3.Unity/Assets/R3.Unity",
-      "depth": 0,
-      "source": "git",
-      "dependencies": {
-        "com.unity.modules.imgui": "1.0.0"
-      },
-      "hash": "24d04125d68719816e24dfb79c60dd97ca396038"
-    },
     "com.github-glitchenzo.nugetforunity": {
       "version": "https://github.com/GlitchEnzo/NuGetForUnity.git?path=/src/NuGetForUnity",
       "depth": 0,

@@ -1,0 +1,24 @@
+// GenerateSphereSDF.compute
+#pragma kernel CSMain
+
+// 생성할 3D 텍스처 (RFloat 형식으로 부동소수점 단일 채널 사용)
+RWTexture3D<float> Result;
+
+// 텍스처 해상도 및 구의 반지름 설정
+float resolution;
+float sphereRadius;
+
+[numthreads(8, 8, 8)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // 현재 스레드의 3D 좌표를 정규화 (-1.0 ~ 1.0 범위의 공간으로 변환)
+    // id.xyz는 0 ~ (resolution - 1) 값을 가짐
+    float3 pos = (id / resolution) * 2.0 - 1.0;
+    
+    // 구의 SDF 계산: 중심점(0,0,0)에서의 거리에서 반지름을 뺌
+    // 구 내부면 음수, 표면이면 0, 외부면 양수가 됨
+    float dist = length(pos) - sphereRadius;
+    
+    // 결과를 3D 텍스처의 해당 인덱스에 저장
+    Result[id] = dist;
+}
