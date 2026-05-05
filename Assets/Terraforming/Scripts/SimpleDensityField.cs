@@ -3,38 +3,34 @@ using UnityEngine;
 
 namespace Terraforming
 {
-    public struct FieldData
-    {
-        public float3 position;
-        public float density;
-    }
-
     public class SimpleDensityField : MonoBehaviour
     {
         private static readonly int GizmoBufferProperty = Shader.PropertyToID("_GizmoBuffer");
-        
+        private static readonly int ResolutionProperty = Shader.PropertyToID("_Resolution");
+        private static readonly int UnitScaleProperty = Shader.PropertyToID("_UnitScale");
+        private static readonly int OriginProperty = Shader.PropertyToID("_Origin");
+
         [Header("Field Properties")]
         [SerializeField] private int resolution = 16;
         [SerializeField] private float unitSize = 1.0f;
         [SerializeField] private float refreshRate = 0.3f;
         private float timer = 0f;
         
-        [Header("Shape Properties")]
-        [SerializeField] private float radius = 3f;
-        [SerializeField] private float2 period = new (1f, 1f);
+        [SerializeField] private DensityFieldGenerator fieldGenerator;
         
         [Header("Debug")]
+        [SerializeField] private bool drawGizmos = true;
         [SerializeField] private Mesh gizmoMesh;
         [SerializeField] private float gizmoSize = 0.1f;
         [SerializeField] private Material gizmoMaterial;
         
-        private DensityFieldGenerator fieldGenerator;
+        private Material instantiatedGizmoMaterial;
         
         private Bounds bounds;
         private ComputeBuffer gizmoBuffer;
         private ComputeBuffer argsBuffer;
         
-        public FieldData[] Field { get; private set; }
+        public float[] Field { get; private set; }
         public int Resolution => resolution;
         public float UnitSize => unitSize;
 
@@ -42,12 +38,10 @@ namespace Terraforming
         {
             timer = 0;
             var count = resolution * resolution * resolution;
-            Field = new FieldData[count];
+            Field = new float[count];
             
             // CreateSimpleSphere(transform.position);
-            fieldGenerator = new SphereGenerator(radius);
-            fieldGenerator = new PerlinLandscapeGenerator(period);
-            // fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
+            fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
             InitializeGizmo();
         }
 
@@ -56,11 +50,13 @@ namespace Terraforming
             int count = resolution * resolution * resolution;
             bounds = new Bounds(transform.position, Vector3.one * (resolution * unitSize * 10));
             
-            gizmoBuffer = new ComputeBuffer(count, sizeof(float) * 4);
+            gizmoBuffer = new ComputeBuffer(count, sizeof(float));
             gizmoBuffer.SetData(Field);
             
-            gizmoMaterial.EnableKeyword("PROCEDURAL_INSTANCING_ON");
-            gizmoMaterial.SetBuffer(GizmoBufferProperty, gizmoBuffer);
+            instantiatedGizmoMaterial = Instantiate(gizmoMaterial);
+            
+            instantiatedGizmoMaterial.EnableKeyword("PROCEDURAL_INSTANCING_ON");
+            instantiatedGizmoMaterial.SetBuffer(GizmoBufferProperty, gizmoBuffer);
 
             uint[] args = new uint[5] { 0, 0, 0, 0, 0 };
             if (gizmoMesh != null)
@@ -86,17 +82,31 @@ namespace Terraforming
             }
 
             timer += Time.deltaTime;
-                
-            Graphics.DrawMeshInstancedIndirect(gizmoMesh, 0, gizmoMaterial, bounds, argsBuffer);
+            if (drawGizmos) Graphics.DrawMeshInstancedIndirect(gizmoMesh, 0, instantiatedGizmoMaterial, bounds, argsBuffer);
+        }
+        
+        public static float3 GetWorldPositionFromIndex(int index, int resolution, float unitSize, float3 origin)
+        {
+            var x = index % resolution;
+            var y = (index / resolution) % resolution;
+            var z = index / (resolution * resolution);
+            var center = new float3(resolution / 2f, resolution / 2f, resolution / 2f);
+            var pos = (new float3(x, y, z) - center) * unitSize + origin;
+            
+            return pos;
         }
 
-        private float3 GetPointWorldPosition(float index)
+        public float3 GetWorldPositionFromIndex(int index)
         {
-            return new float3(index % resolution * unitSize, index / resolution % resolution * unitSize, index / resolution / resolution * unitSize);
+            return GetWorldPositionFromIndex(index, resolution, unitSize, transform.position);
         }
 
         private void RefreshGizmo()
         {
+            if (!drawGizmos) return;
+            instantiatedGizmoMaterial.SetInteger(ResolutionProperty, resolution);
+            instantiatedGizmoMaterial.SetFloat(UnitScaleProperty, unitSize);
+            instantiatedGizmoMaterial.SetVector(OriginProperty, transform.position);
             gizmoBuffer?.SetData(Field);
         }
 

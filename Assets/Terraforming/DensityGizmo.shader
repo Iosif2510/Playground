@@ -4,6 +4,8 @@ Shader "Custom/DensityGizmo"
     {
         _Size("Gizmo Size", Float) = 0.1
         _Alpha("Alpha", Range(0, 1)) = 1
+        _Resolution("Resolution", Integer) = 1
+        _UnitScale("Unit Scale", Float) = 1
     }
 
     SubShader
@@ -23,11 +25,7 @@ Shader "Custom/DensityGizmo"
             #pragma target 4.5
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-            
-            struct GizmoData {
-                float3 position;
-                float density;
-            };
+            // #define UNITY_PROCEDURAL_INSTANCING_ENABLED
 
             struct Attributes
             {
@@ -44,14 +42,27 @@ Shader "Custom/DensityGizmo"
             
             half _Alpha;
             half _Size;
+            int _Resolution;
+            half _UnitScale;
+            float3 _Origin;
             
 #if defined(UNITY_PROCEDURAL_INSTANCING_ENABLED)
-            StructuredBuffer<GizmoData> _GizmoBuffer;
+            StructuredBuffer<float> _GizmoBuffer;
+
+            float3 GetInstancePosition(uint instanceID)
+            {
+                int x = instanceID % _Resolution;
+                int y = (instanceID / _Resolution) % _Resolution;
+                int z = instanceID / (_Resolution * _Resolution);
+                float3 center = float3(_Resolution / 2.0, _Resolution / 2.0, _Resolution / 2.0);
+                float3 pos = (float3(x, y, z) - center) * _UnitScale + _Origin;
+                return pos;
+            }
 
             void setup()
             {
                 // C#에서 넘긴 구조체를 바탕으로 현재 인스턴스의 위치 정보를 버퍼에서 가져옵니다.
-                float3 pos = _GizmoBuffer[unity_InstanceID].position;
+                float3 pos = GetInstancePosition(unity_InstanceID);
                 
                 // TransformObjectToHClip이 동작하도록 위치 오프셋과 스케일을 포함한 TRS 행렬을 재구성합니다.
                 float4x4 dataMatrix = float4x4(
@@ -86,7 +97,7 @@ Shader "Custom/DensityGizmo"
                 OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
                 
 #if defined(UNITY_PROCEDURAL_INSTANCING_ENABLED)
-                OUT.density = _GizmoBuffer[unity_InstanceID].density;
+                OUT.density = _GizmoBuffer[unity_InstanceID];
 #else
                 OUT.density = 0;
 #endif
@@ -96,10 +107,10 @@ Shader "Custom/DensityGizmo"
             half4 frag(Varyings IN) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(IN);
-                // 음수일 경우 0.0 으로, 양수일 경우 1.0 으로 시각화 (임시 설정)
-                half d = clamp(IN.density, 0, 1);
                 
-                return half4(d, d, d, _Alpha);
+                half3 color = lerp(half3(1, 0, 0), half3(0, 1, 0), clamp(IN.density + 0.5, 0, 1));
+                
+                return half4(color, _Alpha);
             }
             ENDHLSL
         }
