@@ -19,28 +19,35 @@ namespace Terraforming
         [SerializeField] private float refreshRate = 0.3f;
         private float timer = 0f;
         
-        [Header("Sphere Shape Properties")]
+        [Header("Shape Properties")]
         [SerializeField] private float radius = 3f;
+        [SerializeField] private float2 period = new (1f, 1f);
         
         [Header("Debug")]
         [SerializeField] private Mesh gizmoMesh;
         [SerializeField] private float gizmoSize = 0.1f;
         [SerializeField] private Material gizmoMaterial;
         
+        private DensityFieldGenerator fieldGenerator;
+        
         private Bounds bounds;
         private ComputeBuffer gizmoBuffer;
         private ComputeBuffer argsBuffer;
         
-        public FieldData[] DensityField { get; private set; }
+        public FieldData[] Field { get; private set; }
         public int Resolution => resolution;
         public float UnitSize => unitSize;
 
         public void InitializeField()
         {
-            int count = resolution * resolution * resolution;
-            DensityField = new FieldData[count];
+            timer = 0;
+            var count = resolution * resolution * resolution;
+            Field = new FieldData[count];
             
-            CreateSimpleSphere(transform.position);
+            // CreateSimpleSphere(transform.position);
+            fieldGenerator = new SphereGenerator(radius);
+            fieldGenerator = new PerlinLandscapeGenerator(period);
+            // fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
             InitializeGizmo();
         }
 
@@ -50,7 +57,7 @@ namespace Terraforming
             bounds = new Bounds(transform.position, Vector3.one * (resolution * unitSize * 10));
             
             gizmoBuffer = new ComputeBuffer(count, sizeof(float) * 4);
-            gizmoBuffer.SetData(DensityField);
+            gizmoBuffer.SetData(Field);
             
             gizmoMaterial.EnableKeyword("PROCEDURAL_INSTANCING_ON");
             gizmoMaterial.SetBuffer(GizmoBufferProperty, gizmoBuffer);
@@ -73,7 +80,8 @@ namespace Terraforming
             if (gizmoBuffer == null || argsBuffer == null) return;
             if (timer > refreshRate)
             {
-                CreateSimpleSphere(transform.position);
+                fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
+                RefreshGizmo();
                 timer -= refreshRate;
             }
 
@@ -81,22 +89,15 @@ namespace Terraforming
                 
             Graphics.DrawMeshInstancedIndirect(gizmoMesh, 0, gizmoMaterial, bounds, argsBuffer);
         }
-        
-        private void CreateSimpleSphere(float3 position)
-        {
-            for (var i = 0; i < resolution * resolution * resolution; i++)
-            {
-                var x = i % resolution;
-                var y = (i / resolution) % resolution;
-                var z = i / (resolution * resolution);
-                var center = new float3(resolution / 2f, resolution / 2f, resolution / 2f);
-                var pos = (new float3(x, y, z) - center) * unitSize + position;
-                
-                DensityField[i].position = pos;
-                DensityField[i].density = math.length(pos - position) - radius;
-            }
 
-            gizmoBuffer?.SetData(DensityField);
+        private float3 GetPointWorldPosition(float index)
+        {
+            return new float3(index % resolution * unitSize, index / resolution % resolution * unitSize, index / resolution / resolution * unitSize);
+        }
+
+        private void RefreshGizmo()
+        {
+            gizmoBuffer?.SetData(Field);
         }
 
         private void OnDestroy()

@@ -14,9 +14,12 @@ namespace Terraforming
         [SerializeField] private float refreshRate = 0.1f;
         private MeshFilter meshFilter;
 
-        private int[] cubeCorners = new int[8];
+        private readonly int[] cubeCorners = new int[8];
         private Mesh mesh;
         private float timer;
+        
+        private readonly List<Vector3> vertices = new ();
+        private readonly List<int> triangleIndices = new ();
 
         private (int first, int second)[] edgeList =
         {
@@ -39,6 +42,7 @@ namespace Terraforming
             densityField.InitializeField();
             meshFilter = GetComponent<MeshFilter>();
             mesh = new Mesh();
+            timer = 0;
             // GenerateMeshes();
         }
 
@@ -59,13 +63,13 @@ namespace Terraforming
 
         private void GenerateMeshes()
         {
-            var fieldBuffer = densityField.DensityField;
+            var fieldBuffer = densityField.Field;
             var resolution = densityField.Resolution;
             
             mesh.Clear();
 
-            var vertices = new List<Vector3>();
-            var triangleIndices = new List<int>();
+            vertices.Clear();
+            triangleIndices.Clear();
 
             for (var x = 0; x < resolution - 1; x++)
             {
@@ -132,6 +136,7 @@ namespace Terraforming
                 var value1 = fieldBuffer[cubeCorners[edgeList[i].first]].density;
                 var value2 = fieldBuffer[cubeCorners[edgeList[i].second]].density;
                 vertList[i] = Interpolate(point1, point2, value1, value2, isoLevel);
+                // vertList[i] = SimpleHalf(point1, point2);
             }
 
             //generate triangles using interpolated vertices and triangle table
@@ -149,6 +154,8 @@ namespace Terraforming
             
             return triangleList;
         }
+
+        private static float3 SimpleHalf(float3 point0, float3 point1) => (point0 + point1) / 2;
 
         private static float3 Interpolate(float3 point0, float3 point1, float value0, float value1, float threshold)
         {
