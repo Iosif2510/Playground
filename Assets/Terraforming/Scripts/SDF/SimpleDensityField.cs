@@ -6,9 +6,10 @@ namespace Terraforming
     public class SimpleDensityField : MonoBehaviour
     {
         private static readonly int GizmoBufferProperty = Shader.PropertyToID("_GizmoBuffer");
-        private static readonly int ResolutionProperty = Shader.PropertyToID("_Resolution");
-        private static readonly int UnitScaleProperty = Shader.PropertyToID("_UnitScale");
-        private static readonly int OriginProperty = Shader.PropertyToID("_Origin");
+        private static readonly int DimensionsProperty  = Shader.PropertyToID("_Dimensions");
+        private static readonly int CenterOffsetProperty = Shader.PropertyToID("_CenterOffset");
+        private static readonly int UnitScaleProperty   = Shader.PropertyToID("_UnitScale");
+        private static readonly int OriginProperty      = Shader.PropertyToID("_Origin");
 
         [Header("Field Properties")]
         [SerializeField] private int resolution = 16;
@@ -152,7 +153,8 @@ namespace Terraforming
         private void RefreshGizmo()
         {
             if (!drawGizmos) return;
-            instantiatedGizmoMaterial.SetInteger(ResolutionProperty, resolution);
+            instantiatedGizmoMaterial.SetVector(DimensionsProperty, new Vector4(resolution, resolution, resolution, 0));
+            instantiatedGizmoMaterial.SetVector(CenterOffsetProperty, new Vector4(resolution / 2f, resolution / 2f, resolution / 2f, 0));
             instantiatedGizmoMaterial.SetFloat(UnitScaleProperty, unitSize);
             instantiatedGizmoMaterial.SetVector(OriginProperty, transform.position);
             gizmoBuffer?.SetData(Field);

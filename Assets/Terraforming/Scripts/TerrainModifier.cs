@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -12,30 +11,30 @@ namespace Terraforming
         private Ray ray;
         private bool isHit;
         
-        private LayerMask terrainLayerMask;
-        [SerializeField] private SimpleMarchingCubeGenerator marchingCubeGenerator;
-
+        [SerializeField] private ChunkedDensityField densityField;
         [SerializeField] private float modifyRadius = 2f;
 
         private void Awake()
         {
             mainCamera = Camera.main;
-            terrainLayerMask = LayerMask.GetMask("Terrain");
         }
 
         private void Update()
         {
+            if (mainCamera == null || densityField == null) return;
+
             ray = mainCamera.ScreenPointToRay(Mouse.current.position.ReadValue());
             isHit = Physics.Raycast(ray, out rayHitPoint);
-            // isHit = Physics.Raycast(ray, out rayHitPoint, 100f, terrainLayerMask);
+
             if (isHit)
             {
-                // var densityChunk = marchingCubeGenerator.GetChunk(rayHitPoint.point);
-                var chunks = marchingCubeGenerator.GetChunksInRadius(rayHitPoint.point, modifyRadius);
+                var chunks = densityField.GetChunksInRadius(rayHitPoint.point, modifyRadius);
                 foreach (var densityChunk in chunks)
                 {
-                    if (Mouse.current.leftButton.isPressed) densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, SimpleDensityField.ModifyMethod.Fill);
-                    else if (Mouse.current.rightButton.isPressed) densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, SimpleDensityField.ModifyMethod.Carve);
+                    if (Mouse.current.leftButton.isPressed) 
+                        densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, FieldChunk.ModifyMethod.Fill);
+                    else if (Mouse.current.rightButton.isPressed) 
+                        densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, FieldChunk.ModifyMethod.Carve);
                 }
             }
         }

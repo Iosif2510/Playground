@@ -12,5 +12,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: aee626988cd54fb49f2412da8d081301, type: 3}
   m_Name: Perlin Landscape Generator
   m_EditorClassIdentifier: Assembly-CSharp::Terraforming.PerlinLandscapeGenerator
-  amplitude: 0.43
-  noiseScale: 0.27
+  amplitude: 0.38
+  noiseScale: 0.15

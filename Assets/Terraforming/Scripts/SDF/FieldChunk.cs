@@ -6,16 +6,16 @@ namespace Terraforming
 {
     /// <summary>
     /// ChunkedDensityField 전체 Field 배열의 일부 영역을 담당하는 청크.
-    /// fieldChunk[z][y] 는 전체 Field 의 X행을 복사 없이 직접 참조합니다.
     /// </summary>
     public class FieldChunk
     {
         private static readonly int GizmoBufferProperty = Shader.PropertyToID("_GizmoBuffer");
-        private static readonly int ResolutionProperty  = Shader.PropertyToID("_Resolution");
+        private static readonly int DimensionsProperty  = Shader.PropertyToID("_Dimensions");
+        private static readonly int CenterOffsetProperty = Shader.PropertyToID("_CenterOffset");
         private static readonly int UnitScaleProperty   = Shader.PropertyToID("_UnitScale");
         private static readonly int OriginProperty      = Shader.PropertyToID("_Origin");
 
-        private readonly ChunkedDensityField owner;
+        public readonly ChunkedDensityField owner;
 
         /// <summary>전체 필드 내 이 청크의 시작 좌표 (정수 인덱스)</summary>
         public readonly int3 OriginIndex;
@@ -26,12 +26,7 @@ namespace Terraforming
         /// <summary>이 청크의 월드 공간 원점</summary>
         public readonly float3 WorldOrigin;
 
-        // fieldChunk[z][y] → owner.Field 의 X행을 복사 없이 직접 참조하는 슬라이스
-        // 길이 = ActualSize.x
-        // 쓰기도 가능하므로 Memory<float> 사용
-        private Memory<float>[][] fieldChunk;
-
-        // GPU 업로드용 스테이징 버퍼 (RefreshGizmo 호출 시에만 flatten 복사)
+        // GPU 업로드용 스테이징 버퍼 (RefreshGizmo 호출 시에만 복사)
         private float[] stagingBuffer;
 
         private bool drawBounds;
@@ -57,8 +52,8 @@ namespace Terraforming
         {
             get
             {
-                var size   = ((float3)(ActualSize - 1) * owner.UnitSize);
-                var center = (WorldOrigin + (float3)(ActualSize - 1) * owner.UnitSize * 0.5f);
+                var size   = (Vector3)((float3)(ActualSize - 1) * owner.UnitSize);
+                var center = Vector3.Lerp(WorldOrigin, WorldOrigin + (float3)(ActualSize - 1) * owner.UnitSize, 0.5f);
                 return new Bounds(center, size);
             }
         }
@@ -68,22 +63,6 @@ namespace Terraforming
         // ─────────────────────────────────────────────
         public void Initialize()
         {
-            int R = owner.Resolution;
-
-            // zero-copy 슬라이스 구성: fieldChunk[z][y] = Field 의 X행
-            fieldChunk = new Memory<float>[ActualSize.z][];
-            for (int lz = 0; lz < ActualSize.z; lz++)
-            {
-                fieldChunk[lz] = new Memory<float>[ActualSize.y];
-                for (int ly = 0; ly < ActualSize.y; ly++)
-                {
-                    int start = (OriginIndex.x)
-                              + (OriginIndex.y + ly) * R
-                              + (OriginIndex.z + lz) * R * R;
-                    fieldChunk[lz][ly] = new Memory<float>(owner.Field, start, ActualSize.x);
-                }
-            }
-
             // GPU 스테이징 버퍼
             int count = ActualSize.x * ActualSize.y * ActualSize.z;
             stagingBuffer = new float[count];
@@ -92,7 +71,7 @@ namespace Terraforming
             if (owner.GizmoMesh != null && owner.GizmoMaterial != null)
             {
                 gizmoBounds = new Bounds(
-                    (Vector3)WorldOrigin,
+                    new Vector3(WorldOrigin.x, WorldOrigin.y, WorldOrigin.z),
                     Vector3.one * (math.cmax(ActualSize) * owner.UnitSize * 10));
 
                 gizmoBuffer = new ComputeBuffer(count, sizeof(float));
@@ -113,6 +92,7 @@ namespace Terraforming
             }
 
             drawGizmos = owner.DrawGizmos;
+            RefreshGizmo();
         }
 
         public void Dispose()
@@ -124,16 +104,24 @@ namespace Terraforming
         }
 
         // ─────────────────────────────────────────────
-        //  데이터 접근 (zero-copy)
+        //  데이터 접근 (1D 배열 인덱싱, Zero-copy)
         // ─────────────────────────────────────────────
+        
+        /// <summary>청크 로컬 좌표 → 전체 필드의 1D 인덱스</summary>
+        private int FlattenGlobal(int lx, int ly, int lz)
+        {
+            return (OriginIndex.x + lx) 
+                   + (OriginIndex.y + ly) * owner.Resolution 
+                   + (OriginIndex.z + lz) * owner.Resolution * owner.Resolution;
+        }
 
-        /// <summary>청크 로컬 좌표로 밀도 읽기 — 복사 없음</summary>
+        /// <summary>청크 로컬 좌표로 밀도 읽기 (이웃 청크의 값도 초과해서 읽을 수 있음)</summary>
         public float GetDensity(int lx, int ly, int lz) =>
-            fieldChunk[lz][ly].Span[lx];
+            owner.Field[FlattenGlobal(lx, ly, lz)];
 
-        /// <summary>청크 로컬 좌표로 밀도 쓰기 — owner.Field 에 직접 반영, 복사 없음</summary>
+        /// <summary>청크 로컬 좌표로 밀도 쓰기 (전체 필드에 즉시 반영)</summary>
         public void SetDensity(int lx, int ly, int lz, float value) =>
-            fieldChunk[lz][ly].Span[lx] = value;
+            owner.Field[FlattenGlobal(lx, ly, lz)] = value;
 
         /// <summary>청크 로컬 좌표 → 월드 위치</summary>
         public float3 GetWorldPosition(int lx, int ly, int lz) =>
@@ -148,19 +136,18 @@ namespace Terraforming
         {
             for (var lz = 0; lz < ActualSize.z; lz++)
             for (var ly = 0; ly < ActualSize.y; ly++)
+            for (var lx = 0; lx < ActualSize.x; lx++)
             {
-                var span = fieldChunk[lz][ly].Span;   // 한 행 전체를 Span으로 획득
-                for (var lx = 0; lx < ActualSize.x; lx++)
+                var worldPos = GetWorldPosition(lx, ly, lz);
+                var sdfValue = math.length(worldPos - position) - radius;
+                var flatIdx = FlattenGlobal(lx, ly, lz);
+                
+                owner.Field[flatIdx] = method switch
                 {
-                    var worldPos = GetWorldPosition(lx, ly, lz);
-                    var sdfValue = math.length(worldPos - position) - radius;
-                    span[lx] = method switch
-                    {
-                        ModifyMethod.Fill  => math.min(span[lx], sdfValue),
-                        ModifyMethod.Carve => math.max(span[lx], -sdfValue),
-                        _                  => span[lx]
-                    };
-                }
+                    ModifyMethod.Fill  => math.min(owner.Field[flatIdx], sdfValue),
+                    ModifyMethod.Carve => math.max(owner.Field[flatIdx], -sdfValue),
+                    _                  => owner.Field[flatIdx]
+                };
             }
             RefreshGizmo();
         }
@@ -186,23 +173,22 @@ namespace Terraforming
         }
 
         /// <summary>
-        /// GPU 버퍼 갱신. 이 때만 staging 배열로 flatten 복사가 발생합니다.
+        /// GPU 버퍼 갱신. 이 때만 staging 배열로 flatten 복사가 발생.
         /// </summary>
         public void RefreshGizmo()
         {
             if (instantiatedMaterial == null) return;
 
-            // staging 버퍼로 flatten (z→y→x 순)
             int idx = 0;
             for (var lz = 0; lz < ActualSize.z; lz++)
             for (var ly = 0; ly < ActualSize.y; ly++)
+            for (var lx = 0; lx < ActualSize.x; lx++)
             {
-                fieldChunk[lz][ly].Span.CopyTo(
-                    new Span<float>(stagingBuffer, idx, ActualSize.x));
-                idx += ActualSize.x;
+                stagingBuffer[idx++] = owner.Field[FlattenGlobal(lx, ly, lz)];
             }
 
-            instantiatedMaterial.SetInteger(ResolutionProperty, ActualSize.x);
+            instantiatedMaterial.SetVector(DimensionsProperty, new Vector4(ActualSize.x, ActualSize.y, ActualSize.z, 0));
+            instantiatedMaterial.SetVector(CenterOffsetProperty, Vector4.zero); // 청크 내부에서는 오프셋 없음
             instantiatedMaterial.SetFloat(UnitScaleProperty, owner.UnitSize);
             instantiatedMaterial.SetVector(OriginProperty,
                 new Vector4(WorldOrigin.x, WorldOrigin.y, WorldOrigin.z, 0));

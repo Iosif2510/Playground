@@ -4,8 +4,9 @@ Shader "Custom/DensityGizmo"
     {
         _Size("Gizmo Size", Float) = 0.1
         _Alpha("Alpha", Range(0, 1)) = 1
-        _Resolution("Resolution", Integer) = 1
         _UnitScale("Unit Scale", Float) = 1
+        _Dimensions("Dimensions", Vector) = (1, 1, 1, 0)
+        _CenterOffset("Center Offset", Vector) = (0, 0, 0, 0)
     }
 
     SubShader
@@ -25,8 +26,7 @@ Shader "Custom/DensityGizmo"
             #pragma target 4.5
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-            // #define UNITY_PROCEDURAL_INSTANCING_ENABLED
-
+            
             struct Attributes
             {
                 float4 positionOS : POSITION;
@@ -42,7 +42,8 @@ Shader "Custom/DensityGizmo"
             
             half _Alpha;
             half _Size;
-            int _Resolution;
+            float3 _Dimensions;
+            float3 _CenterOffset;
             half _UnitScale;
             float3 _Origin;
             
@@ -51,11 +52,14 @@ Shader "Custom/DensityGizmo"
 
             float3 GetInstancePosition(uint instanceID)
             {
-                int x = instanceID % _Resolution;
-                int y = (instanceID / _Resolution) % _Resolution;
-                int z = instanceID / (_Resolution * _Resolution);
-                float3 center = float3(_Resolution / 2.0, _Resolution / 2.0, _Resolution / 2.0);
-                float3 pos = (float3(x, y, z) - center) * _UnitScale + _Origin;
+                int dimX = (int)_Dimensions.x;
+                int dimY = (int)_Dimensions.y;
+                
+                int x = instanceID % dimX;
+                int y = (instanceID / dimX) % dimY;
+                int z = instanceID / (dimX * dimY);
+                
+                float3 pos = (float3(x, y, z) - _CenterOffset) * _UnitScale + _Origin;
                 return pos;
             }
 
