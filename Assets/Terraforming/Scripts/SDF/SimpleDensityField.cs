@@ -13,6 +13,7 @@ namespace Terraforming
         [Header("Field Properties")]
         [SerializeField] private int resolution = 16;
         [SerializeField] private float unitSize = 1.0f;
+        [SerializeField] private bool regenerate = false;
         [SerializeField] private float refreshRate = 0.3f;
         private float timer = 0f;
         
@@ -34,6 +35,8 @@ namespace Terraforming
         public int Resolution => resolution;
         public float UnitSize => unitSize;
 
+        private bool drawBounds;
+
         public void InitializeField()
         {
             timer = 0;
@@ -41,8 +44,26 @@ namespace Terraforming
             Field = new float[count];
             
             // CreateSimpleSphere(transform.position);
-            fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
             InitializeGizmo();
+            GeneratePrefixField();
+        }
+
+        public Bounds FieldBounds
+        {
+            get
+            {
+                var size = Vector3.one * ((resolution - 1) * unitSize);
+                return new Bounds(transform.position - Vector3.one * (unitSize / 2f), size);
+            }
+        }
+        
+        public void DrawBounds(bool draw) => drawBounds = draw;
+
+        private void OnDrawGizmos()
+        {
+            if (!drawBounds) return;
+            Gizmos.color = Color.yellow;
+            Gizmos.DrawWireCube(FieldBounds.center, FieldBounds.size);
         }
 
         private void InitializeGizmo()
@@ -76,13 +97,40 @@ namespace Terraforming
             if (gizmoBuffer == null || argsBuffer == null) return;
             if (timer > refreshRate)
             {
-                fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
-                RefreshGizmo();
+                if (regenerate) GeneratePrefixField();
                 timer -= refreshRate;
             }
 
             timer += Time.deltaTime;
             if (drawGizmos) Graphics.DrawMeshInstancedIndirect(gizmoMesh, 0, instantiatedGizmoMaterial, bounds, argsBuffer);
+        }
+
+        public void GeneratePrefixField()
+        {
+            fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
+            RefreshGizmo();
+        }
+
+        public enum ModifyMethod
+        {
+            Fill,
+            Carve
+        }
+
+        public void ModifySphereVolume(float3 position, float radius, ModifyMethod method)
+        {
+            for (var i = 0; i < resolution * resolution * resolution; i++)
+            {
+                var pos = GetWorldPositionFromIndex(i, resolution, unitSize, transform.position);
+                var fieldValue = math.length(pos - position) - radius;
+                Field[i] = method switch
+                {
+                    ModifyMethod.Fill => math.min(Field[i], fieldValue),
+                    ModifyMethod.Carve => math.max(Field[i], -fieldValue),
+                    _ => Field[i]
+                };
+            }
+            RefreshGizmo();
         }
         
         public static float3 GetWorldPositionFromIndex(int index, int resolution, float unitSize, float3 origin)

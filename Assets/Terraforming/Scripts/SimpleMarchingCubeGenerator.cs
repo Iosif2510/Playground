@@ -13,6 +13,7 @@ namespace Terraforming
         [SerializeField, Range(-5f, 5f)] private float isoLevel = 0.0f; // 등고선 레벨
         [SerializeField] private float refreshRate = 0.1f;
         [SerializeField] private List<SimpleDensityField> densityFieldChunks;
+        private MeshCollider meshCollider;
         
         private readonly int[] cubeCorners = new int[8];
         private MeshFilter meshFilter;
@@ -46,8 +47,11 @@ namespace Terraforming
             }
             
             meshFilter = GetComponent<MeshFilter>();
+            meshCollider = GetComponent<MeshCollider>();
             mesh = new Mesh();
             timer = 0;
+            meshFilter.mesh = mesh;
+            meshCollider.sharedMesh = mesh;
             // GenerateMeshes();
         }
 
@@ -64,6 +68,46 @@ namespace Terraforming
                 timer -= refreshRate;
             }
             timer += Time.deltaTime;
+        }
+
+        public SimpleDensityField GetChunk(Vector3 position)
+        {
+            SimpleDensityField result = null;
+            foreach (var densityField in densityFieldChunks)
+            {
+                if (densityField.FieldBounds.Contains(position))
+                {
+                    result = densityField;
+                    densityField.DrawBounds(true);
+                }
+                else densityField.DrawBounds(false);
+            }
+
+            return result;
+        }
+
+        public List<SimpleDensityField> GetChunksInRadius(Vector3 position, float radius)
+        {
+            var result = new List<SimpleDensityField>();
+            var sqrRadius = radius * radius;
+            
+            foreach (var densityField in densityFieldChunks)
+            {
+                // Find the closest point in the chunk's bounds to our sphere center
+                var closestPoint = densityField.FieldBounds.ClosestPoint(position);
+                
+                // If the distance to the closest point is less than or equal to the radius, there is an intersection
+                if ((closestPoint - position).sqrMagnitude <= sqrRadius)
+                {
+                    result.Add(densityField);
+                    densityField.DrawBounds(true);
+                }
+                else
+                {
+                    densityField.DrawBounds(false);
+                }
+            }
+            return result;
         }
 
         private void GenerateMeshes()
@@ -111,7 +155,12 @@ namespace Terraforming
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
 
-            meshFilter.mesh = mesh;
+            if (meshCollider != null)
+            {
+                meshCollider.sharedMesh = mesh;
+            }
+
+            
         }
 
         private List<Triangle> MarchCube(int3 indexPoint, SimpleDensityField densityField)

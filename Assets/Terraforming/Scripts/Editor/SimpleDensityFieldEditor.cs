@@ -5,6 +5,7 @@ using Terraforming;
 namespace Terraforming.Editor
 {
     [CustomEditor(typeof(SimpleDensityField))]
+    [CanEditMultipleObjects]
     public class SimpleDensityFieldEditor : UnityEditor.Editor
     {
         private UnityEditor.Editor cachedGeneratorEditor;

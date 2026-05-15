@@ -13,4 +13,4 @@ MonoBehaviour:
   m_Name: Simplex 3D Generator
   m_EditorClassIdentifier: Assembly-CSharp::Terraforming.Simplex3DGenerator
   amplitude: 1
-  noiseScale: 0.13
+  noiseScale: 0.14
