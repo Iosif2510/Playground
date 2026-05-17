@@ -32,7 +32,7 @@ namespace Terraforming
         private ComputeBuffer gizmoBuffer;
         private ComputeBuffer argsBuffer;
         
-        public float[] Field { get; private set; }
+        public half[] Field { get; private set; }
         public int Resolution => resolution;
         public float UnitSize => unitSize;
 
@@ -42,7 +42,7 @@ namespace Terraforming
         {
             timer = 0;
             var count = resolution * resolution * resolution;
-            Field = new float[count];
+            Field = new half[count];
             
             // CreateSimpleSphere(transform.position);
             InitializeGizmo();
@@ -126,8 +126,8 @@ namespace Terraforming
                 var fieldValue = math.length(pos - position) - radius;
                 Field[i] = method switch
                 {
-                    ModifyMethod.Fill => math.min(Field[i], fieldValue),
-                    ModifyMethod.Carve => math.max(Field[i], -fieldValue),
+                    ModifyMethod.Fill => math.half(math.min(Field[i], fieldValue)),
+                    ModifyMethod.Carve => math.half(math.max(Field[i], -fieldValue)),
                     _ => Field[i]
                 };
             }

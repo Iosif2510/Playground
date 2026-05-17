@@ -7,6 +7,7 @@ namespace Terraforming
     /// <summary>
     /// ChunkedDensityField 전체 Field 배열의 일부 영역을 담당하는 청크.
     /// </summary>
+    [Serializable]
     public class FieldChunk
     {
         private static readonly int GizmoBufferProperty = Shader.PropertyToID("_GizmoBuffer");
@@ -30,12 +31,13 @@ namespace Terraforming
         private float[] stagingBuffer;
 
         private bool drawBounds;
-        private bool drawGizmos;
+        [SerializeField] private bool drawGizmos;
 
         private Material instantiatedMaterial;
         private ComputeBuffer gizmoBuffer;
         private ComputeBuffer argsBuffer;
         private Bounds gizmoBounds;
+        
 
         public FieldChunk(ChunkedDensityField owner, int3 originIndex, int3 actualSize, float3 worldOrigin)
         {
@@ -57,6 +59,14 @@ namespace Terraforming
                 return new Bounds(center, size);
             }
         }
+
+        // ─────────────────────────────────────────────
+        //  LOD 및 렌더링 설정
+        // ─────────────────────────────────────────────
+        [SerializeField] private bool renderMesh = true;
+        [SerializeField] private int lod = 1;
+        public bool RenderMesh => renderMesh;
+        public int Lod => lod;
 
         // ─────────────────────────────────────────────
         //  초기화 / 해제
@@ -120,8 +130,16 @@ namespace Terraforming
             owner.Field[FlattenGlobal(lx, ly, lz)];
 
         /// <summary>청크 로컬 좌표로 밀도 쓰기 (전체 필드에 즉시 반영)</summary>
-        public void SetDensity(int lx, int ly, int lz, float value) =>
-            owner.Field[FlattenGlobal(lx, ly, lz)] = value;
+        public void SetDensity(int lx, int ly, int lz, half value)
+        {
+            int flatIdx = FlattenGlobal(lx, ly, lz);
+            var fieldArray = owner.Field;
+            if (fieldArray[flatIdx].value != value.value)
+            {
+                fieldArray[flatIdx] = value;
+                owner.NotifyFieldUpdated();
+            }
+        }
 
         /// <summary>청크 로컬 좌표 → 월드 위치</summary>
         public float3 GetWorldPosition(int lx, int ly, int lz) =>
@@ -132,31 +150,55 @@ namespace Terraforming
         // ─────────────────────────────────────────────
         public enum ModifyMethod { Fill, Carve }
 
-        public void ModifySphereVolume(float3 position, float radius, ModifyMethod method)
+        public bool ModifySphereVolume(float3 position, float radius, ModifyMethod method)
         {
+            bool modified = false;
+            var fieldArray = owner.Field;
+            
             for (var lz = 0; lz < ActualSize.z; lz++)
             for (var ly = 0; ly < ActualSize.y; ly++)
             for (var lx = 0; lx < ActualSize.x; lx++)
             {
                 var worldPos = GetWorldPosition(lx, ly, lz);
+                // 미리 범위를 체크하여 구 계산의 상당 부분을 스킵 (박스 컬링)
+                if (math.abs(worldPos.x - position.x) > radius ||
+                    math.abs(worldPos.y - position.y) > radius ||
+                    math.abs(worldPos.z - position.z) > radius) continue;
+
                 var sdfValue = math.length(worldPos - position) - radius;
                 var flatIdx = FlattenGlobal(lx, ly, lz);
                 
-                owner.Field[flatIdx] = method switch
+                var currentVal = fieldArray[flatIdx];
+                var currentFloat = (float)currentVal;
+                
+                // switch문과 math.half 변환이 이너 루프에서 계속 박싱/GC를 유발할 수 있으므로 분기문으로 변경
+                float newFloat = currentFloat;
+                if (method == ModifyMethod.Fill)
+                    newFloat = math.min(currentFloat, sdfValue);
+                else if (method == ModifyMethod.Carve)
+                    newFloat = math.max(currentFloat, -sdfValue);
+
+                var newVal = math.half(newFloat);
+                
+                if (currentVal.value != newVal.value)
                 {
-                    ModifyMethod.Fill  => math.min(owner.Field[flatIdx], sdfValue),
-                    ModifyMethod.Carve => math.max(owner.Field[flatIdx], -sdfValue),
-                    _                  => owner.Field[flatIdx]
-                };
+                    fieldArray[flatIdx] = newVal;
+                    modified = true;
+                }
             }
-            RefreshGizmo();
+            if (modified)
+            {
+                RefreshGizmo();
+                // owner.NotifyFieldUpdated() 제거 -> 최적화를 위해 외부에서 취합하여 한 번만 호출
+            }
+            return modified;
         }
 
         // ─────────────────────────────────────────────
-        //  렌더링
+        //  기즈모 렌더링
         // ─────────────────────────────────────────────
         public void SetDrawGizmos(bool value) => drawGizmos = value;
-        public void DrawBounds(bool draw)      => drawBounds = draw;
+        public void DrawBounds(bool draw) => drawBounds = draw;
 
         public void DrawGizmo()
         {
@@ -177,7 +219,7 @@ namespace Terraforming
         /// </summary>
         public void RefreshGizmo()
         {
-            if (instantiatedMaterial == null) return;
+            if (!drawGizmos || instantiatedMaterial == null) return;
 
             int idx = 0;
             for (var lz = 0; lz < ActualSize.z; lz++)

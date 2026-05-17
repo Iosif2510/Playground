@@ -1,4 +1,7 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using Sirenix.OdinInspector;
+using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -20,8 +23,8 @@ namespace Terraforming
 
         // ─── 전체 밀도 필드 ───────────────────────────
         // Field[x + y*R + z*R*R]
-        // FieldChunk 들이 이 배열의 구간을 Memory<float> 슬라이스로 직접 참조함
-        public float[] Field { get; private set; }
+        // FieldChunk 들이 이 배열의 구간을 참조
+        public NativeArray<half> Field { get; private set; }
 
         public int Resolution  => resolution;
         public float UnitSize  => unitSize;
@@ -29,20 +32,28 @@ namespace Terraforming
         public Mesh GizmoMesh        => gizmoMesh;
         public Material GizmoMaterial => gizmoMaterial;
         public bool DrawGizmos       => drawGizmos;
+        
+        public event Action OnFieldUpdated;
+        public event Action<List<FieldChunk>> OnChunksUpdated;
 
-        private readonly List<FieldChunk> chunks = new();
+        [SerializeField] private List<FieldChunk> chunks = new();
         public IReadOnlyList<FieldChunk> Chunks => chunks;
 
         // ─────────────────────────────────────────────
         //  초기화
         // ─────────────────────────────────────────────
+        [Button]
         public void InitializeField()
         {
             var count = resolution * resolution * resolution;
-            Field = new float[count];
+            
+            if (Field.IsCreated) Field.Dispose();
+            Field = new NativeArray<half>(count, Allocator.Persistent);
 
             fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
+
             InitializeChunks();
+            NotifyFieldUpdated();
         }
 
         private void InitializeChunks()
@@ -95,6 +106,7 @@ namespace Terraforming
         private void OnDestroy()
         {
             foreach (var chunk in chunks) chunk.Dispose();
+            if (Field.IsCreated) Field.Dispose();
         }
 
         // ─────────────────────────────────────────────
@@ -115,19 +127,18 @@ namespace Terraforming
         }
 
         /// <summary>구 반경과 겹치는 모든 청크 반환</summary>
-        public List<FieldChunk> GetChunksInRadius(Vector3 position, float radius)
+        public void GetChunksInRadius(Vector3 position, float radius, List<FieldChunk> results)
         {
-            var result    = new List<FieldChunk>();
+            results.Clear();
             var sqrRadius = radius * radius;
 
             foreach (var chunk in chunks)
             {
                 var closest = chunk.FieldBounds.ClosestPoint(position);
-                bool overlaps = (closest - position).sqrMagnitude <= sqrRadius;
+                var overlaps = (closest - position).sqrMagnitude <= sqrRadius;
                 chunk.DrawBounds(overlaps);
-                if (overlaps) result.Add(chunk);
+                if (overlaps) results.Add(chunk);
             }
-            return result;
         }
 
         // ─────────────────────────────────────────────
@@ -145,12 +156,26 @@ namespace Terraforming
                    + (float3)(Vector3)transform.position;
         }
 
+        public void NotifyFieldUpdated()
+        {
+            OnFieldUpdated?.Invoke();
+        }
+
+        public void NotifyChunksUpdated(List<FieldChunk> modifiedChunks)
+        {
+            OnChunksUpdated?.Invoke(modifiedChunks);
+        }
+
         /// <summary>Generator로 전체 필드를 재생성하고 모든 청크 기즈모 갱신</summary>
+        [Button]
         public void RegenerateField()
         {
+            if (!Field.IsCreated) return;
             fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
+
             // Field 배열이 재사용되므로 Memory 슬라이스 재구성 없이 바로 GPU 갱신
             foreach (var chunk in chunks) chunk.RefreshGizmo();
+            NotifyFieldUpdated();
         }
     }
 }

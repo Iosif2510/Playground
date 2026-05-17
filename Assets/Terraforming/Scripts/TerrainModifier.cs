@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -13,10 +14,15 @@ namespace Terraforming
         
         [SerializeField] private ChunkedDensityField densityField;
         [SerializeField] private float modifyRadius = 2f;
+        [SerializeField] private float modifySpeed = 10f;
+        private float timer;
+
+        private readonly List<FieldChunk> hitChunks = new();
 
         private void Awake()
         {
             mainCamera = Camera.main;
+            timer = 0f;
         }
 
         private void Update()
@@ -25,18 +31,28 @@ namespace Terraforming
 
             ray = mainCamera.ScreenPointToRay(Mouse.current.position.ReadValue());
             isHit = Physics.Raycast(ray, out rayHitPoint);
-
-            if (isHit)
+            
+            if (!isHit) return;
+            var timeSpan = 1 / modifySpeed;
+            if (timer >= timeSpan)
             {
-                var chunks = densityField.GetChunksInRadius(rayHitPoint.point, modifyRadius);
-                foreach (var densityChunk in chunks)
+                timer -= timeSpan;
+                densityField.GetChunksInRadius(rayHitPoint.point, modifyRadius, hitChunks);
+                bool fieldModified = false;
+                foreach (var densityChunk in hitChunks)
                 {
                     if (Mouse.current.leftButton.isPressed) 
-                        densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, FieldChunk.ModifyMethod.Fill);
+                        fieldModified |= densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, FieldChunk.ModifyMethod.Fill);
                     else if (Mouse.current.rightButton.isPressed) 
-                        densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, FieldChunk.ModifyMethod.Carve);
+                        fieldModified |= densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, FieldChunk.ModifyMethod.Carve);
+                }
+                
+                if (fieldModified)
+                {
+                    densityField.NotifyChunksUpdated(hitChunks);
                 }
             }
+            timer += Time.deltaTime;
         }
 
         private void OnDrawGizmos()
