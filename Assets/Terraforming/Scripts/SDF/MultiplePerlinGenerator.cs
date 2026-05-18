@@ -1,49 +1,63 @@
-﻿using Unity.Burst;
+﻿using System;
+using System.Collections.Generic;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace Terraforming
 {
-    [CreateAssetMenu(menuName = "Terraforming/Perlin Landscape Generator")]
-    public class PerlinLandscapeGenerator : DensityFieldGenerator
+    [Serializable, BurstCompile]
+    public struct PerlinOctave
     {
-        [FormerlySerializedAs("scaleMultiplier")] [SerializeField] private float amplitude = 1;
-        [SerializeField] private float noiseScale = 0.1f;
+        public float NoiseScale;
+        public float Amplitude;
+    }
+    
+    [CreateAssetMenu(menuName = "Terraforming/Multiple Perlin Generator")]
+    public class MultiplePerlinGenerator : DensityFieldGenerator
+    {
+        [SerializeField] private List<PerlinOctave> octaves;
         
         public override void GenerateField(half[] field, float3 position, int resolution, float unitSize)
         {
-            for (var i = 0; i < resolution * resolution * resolution; i++)
-            {
-                var pos = SimpleDensityField.GetWorldPositionFromIndex(i, resolution, unitSize, position);
-                
-                // noiseScale을 곱하여 정수 좌표 밖(소수점)을 샘플링하도록 수정
-                field[i] = math.half((pos.y * 2 / resolution) - noise.cnoise(pos.xz * noiseScale) * amplitude);
-            }
+            throw new System.NotImplementedException();
         }
 
         public override void GenerateField(NativeArray<half> field, float3 position, int resolution, float unitSize)
         {
+            var count = resolution * resolution * resolution;
+
+            var octaveArray = octaves.ToNativeArray(Allocator.TempJob);
             var job = new GenerateFieldJob
             {
-                NoiseScale = noiseScale,
-                Amplitude = amplitude,
+                Octaves = octaveArray,
                 Resolution = resolution,
                 UnitSize = unitSize,
                 Position = position,
                 Field = field
             };
-            var handle = job.Schedule(resolution * resolution * resolution, 64);
+            var handle = job.Schedule(count, 64);
             handle.Complete();
+            octaveArray.Dispose();
+        }
+        
+        [BurstCompile]
+        private struct ResetFieldJob : IJobParallelFor
+        {
+            public NativeArray<half> Field;
+            
+            public void Execute(int index)
+            {
+                Field[index] = math.half(0f);
+            }
         }
         
         [BurstCompile]
         private struct GenerateFieldJob : IJobParallelFor
         {
-            public float NoiseScale;
-            public float Amplitude;
+            [ReadOnly] public NativeArray<PerlinOctave> Octaves;
             
             public int Resolution;
             public float UnitSize;
@@ -64,8 +78,18 @@ namespace Terraforming
             public void Execute(int index)
             {
                 var pos = GetWorldPositionFromIndex(index, Resolution, UnitSize, Position);
-                Field[index] = math.half((pos.y * 2 / Resolution) - noise.cnoise(pos.xz * NoiseScale) * Amplitude);
+                float noiseHeight = 0f;
+                
+                for (int i = 0; i < Octaves.Length; i++)
+                {
+                    noiseHeight += noise.cnoise(pos.xz * Octaves[i].NoiseScale) * Octaves[i].Amplitude;
+                }
+                
+                Field[index] = math.half((pos.y * 2 / Resolution) - noiseHeight);
             }
         }
+        
     }
+    
+
 }

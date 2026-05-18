@@ -78,8 +78,8 @@ namespace Terraforming
                 );
 
                 // 청크 월드 원점: 전체 필드 중심을 0으로 기준
-                var worldOrigin = ((float3)originIndex - fieldCenter) * unitSize
-                                  + (float3)(Vector3)transform.position;
+                var worldOrigin = (originIndex - fieldCenter) * unitSize
+                                  + (float3)transform.position;
 
                 var chunk = new FieldChunk(this, originIndex, actualSize, worldOrigin);
                 chunk.Initialize();

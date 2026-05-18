@@ -145,9 +145,9 @@ namespace Terraforming
                 int maxReadY = (chunk.OriginIndex.y + size.y < densityField.Resolution) ? size.y : size.y - 1;
                 int maxReadZ = (chunk.OriginIndex.z + size.z < densityField.Resolution) ? size.z : size.z - 1;
 
-                int cellsX = (maxReadX) / step + 1;
-                int cellsY = (maxReadY) / step + 1;
-                int cellsZ = (maxReadZ) / step + 1;
+                int cellsX = maxReadX / step;
+                int cellsY = maxReadY / step;
+                int cellsZ = maxReadZ / step;
 
                 totalIterations += (cellsX * cellsY * cellsZ);
                 activeChunks.Add(chunk);
@@ -177,9 +177,9 @@ namespace Terraforming
                 int maxReadY = (chunk.OriginIndex.y + size.y < resolution) ? size.y : size.y - 1;
                 int maxReadZ = (chunk.OriginIndex.z + size.z < resolution) ? size.z : size.z - 1;
 
-                int cellsX = (maxReadX) / step + 1;
-                int cellsY = (maxReadY) / step + 1;
-                int cellsZ = (maxReadZ) / step + 1;
+                int cellsX = maxReadX / step;
+                int cellsY = maxReadY / step;
+                int cellsZ = maxReadZ / step;
 
                 int iterations = cellsX * cellsY * cellsZ;
 
@@ -299,7 +299,7 @@ namespace Terraforming
             int y = iy * LodStep;
             int z = iz * LodStep;
 
-            if (x > MaxReadBounds.x || y > MaxReadBounds.y || z > MaxReadBounds.z) return;
+            if (x + LodStep > MaxReadBounds.x || y + LodStep > MaxReadBounds.y || z + LodStep > MaxReadBounds.z) return;
 
             var cubeValues = new NativeArray<float>(8, Allocator.Temp);
             var cubePoints = new NativeArray<float3>(8, Allocator.Temp);
