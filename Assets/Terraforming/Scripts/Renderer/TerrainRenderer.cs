@@ -15,6 +15,13 @@ namespace Terraforming
         public float3 C;
     }
 
+    public struct IndexedTriangle
+    {
+        public int A;
+        public int B;
+        public int C;
+    }
+
     public class TerrainRenderer : MonoBehaviour
     {
         [SerializeField] private ChunkedDensityField densityField;
@@ -155,8 +162,8 @@ namespace Terraforming
 
             if (totalIterations == 0) return;
 
-            // 청크별로 독립적인 출력을 받기 위한 큐 배열 할당 (개수가 적으므로 TempJob)
             var outputQueues = new NativeArray<NativeQueue<Triangle>>(activeChunks.Count, Allocator.TempJob);
+            
             for (int i = 0; i < activeChunks.Count; i++)
             {
                 outputQueues[i] = new NativeQueue<Triangle>(Allocator.TempJob);
@@ -205,7 +212,9 @@ namespace Terraforming
             JobHandle.CompleteAll(jobHandles.AsArray());
             jobHandles.Dispose();
 
-            // 청크별로 Mesh 업데이트
+            // C# Dictionary를 이용한 메인 스레드 고속 버텍스 웰딩(Welding) 캐시
+            var sharedVertices = new Dictionary<float3, int>();
+
             for (int i = 0; i < activeChunks.Count; i++)
             {
                 var chunk = activeChunks[i];
@@ -226,18 +235,36 @@ namespace Terraforming
                 verticesCache.Capacity = math.max(verticesCache.Capacity, vertexCount);
                 indicesCache.Clear();
                 indicesCache.Capacity = math.max(indicesCache.Capacity, vertexCount);
+                sharedVertices.Clear();
 
-                int idx = 0;
                 while (queue.TryDequeue(out Triangle tri))
                 {
-                    verticesCache.Add(tri.A);
-                    indicesCache.Add(idx++);
-                    
-                    verticesCache.Add(tri.B);
-                    indicesCache.Add(idx++);
-                    
-                    verticesCache.Add(tri.C);
-                    indicesCache.Add(idx++);
+                    // A
+                    if (!sharedVertices.TryGetValue(tri.A, out int idxA))
+                    {
+                        idxA = verticesCache.Count;
+                        verticesCache.Add(tri.A);
+                        sharedVertices[tri.A] = idxA;
+                    }
+                    indicesCache.Add(idxA);
+
+                    // B
+                    if (!sharedVertices.TryGetValue(tri.B, out int idxB))
+                    {
+                        idxB = verticesCache.Count;
+                        verticesCache.Add(tri.B);
+                        sharedVertices[tri.B] = idxB;
+                    }
+                    indicesCache.Add(idxB);
+
+                    // C
+                    if (!sharedVertices.TryGetValue(tri.C, out int idxC))
+                    {
+                        idxC = verticesCache.Count;
+                        verticesCache.Add(tri.C);
+                        sharedVertices[tri.C] = idxC;
+                    }
+                    indicesCache.Add(idxC);
                 }
 
                 queue.Dispose();

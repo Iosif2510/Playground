@@ -51,10 +51,10 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _HeightStandard: 0.07
+    - _HeightStandard: 0
     - _QueueControl: 0
     - _QueueOffset: 0
     m_Colors:
-    - _HeightRange: {r: -8, g: 8, b: 0, a: 0}
+    - _HeightRange: {r: -8, g: 10, b: 0, a: 0}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

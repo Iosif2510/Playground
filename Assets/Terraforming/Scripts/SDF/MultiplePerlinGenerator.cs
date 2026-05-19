@@ -11,8 +11,8 @@ namespace Terraforming
     [Serializable, BurstCompile]
     public struct PerlinOctave
     {
-        public float NoiseScale;
         public float Amplitude;
+        public float NoiseScale;
     }
     
     [CreateAssetMenu(menuName = "Terraforming/Multiple Perlin Generator")]
