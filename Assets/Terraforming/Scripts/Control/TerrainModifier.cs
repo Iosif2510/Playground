@@ -6,9 +6,11 @@ namespace Terraforming
 {
     public class TerrainModifier : MonoBehaviour
     {
-        private Camera mainCamera;
+        [SerializeField] private Camera mainCamera;
+        [SerializeField] private bool lockCursor = true;
+        [SerializeField] private float minFillDistance = 1f;
 
-        private RaycastHit rayHitPoint;
+        private RaycastHit rayHit;
         private Ray ray;
         private bool isHit;
         
@@ -21,8 +23,8 @@ namespace Terraforming
 
         private void Awake()
         {
-            mainCamera = Camera.main;
             timer = 0f;
+            Cursor.lockState = lockCursor ? CursorLockMode.Locked : CursorLockMode.None;
         }
 
         private void Update()
@@ -30,21 +32,22 @@ namespace Terraforming
             if (mainCamera == null || densityField == null) return;
 
             ray = mainCamera.ScreenPointToRay(Mouse.current.position.ReadValue());
-            isHit = Physics.Raycast(ray, out rayHitPoint);
+            isHit = Physics.Raycast(ray, out rayHit);
             
             if (!isHit) return;
             var timeSpan = 1 / modifySpeed;
-            if (timer >= timeSpan)
+
+            if ((Mouse.current.leftButton.isPressed && rayHit.distance >= minFillDistance || Mouse.current.rightButton.isPressed) && timer >= timeSpan)
             {
                 timer -= timeSpan;
-                densityField.GetChunksInRadius(rayHitPoint.point, modifyRadius, hitChunks);
+                densityField.GetChunksInRadius(rayHit.point, modifyRadius, hitChunks);
                 bool fieldModified = false;
                 foreach (var densityChunk in hitChunks)
                 {
-                    if (Mouse.current.leftButton.isPressed) 
-                        fieldModified |= densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, FieldChunk.ModifyMethod.Fill);
+                    if (Mouse.current.leftButton.isPressed)
+                        fieldModified |= densityChunk.ModifySphereVolume(rayHit.point, modifyRadius, FieldChunk.ModifyMethod.Fill);
                     else if (Mouse.current.rightButton.isPressed) 
-                        fieldModified |= densityChunk.ModifySphereVolume(rayHitPoint.point, modifyRadius, FieldChunk.ModifyMethod.Carve);
+                        fieldModified |= densityChunk.ModifySphereVolume(rayHit.point, modifyRadius, FieldChunk.ModifyMethod.Carve);
                 }
                 
                 if (fieldModified)
@@ -52,17 +55,22 @@ namespace Terraforming
                     densityField.NotifyChunksUpdated(hitChunks);
                 }
             }
+            
+            if (timer >= timeSpan)
+            {
+                
+            }
             timer += Time.deltaTime;
         }
 
         private void OnDrawGizmos()
         {
             Gizmos.color = Color.red;
-            var distance = isHit ? rayHitPoint.distance : 100f;
+            var distance = isHit ? rayHit.distance : 100f;
             Gizmos.DrawRay(ray.origin, ray.direction * distance);
             if (isHit)
             {
-                Gizmos.DrawWireSphere(rayHitPoint.point, 0.1f);
+                Gizmos.DrawWireSphere(rayHit.point, 0.1f);
             }
         }
     }

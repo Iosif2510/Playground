@@ -1,12 +1,5 @@
 fileFormatVersion: 2
 guid: 73ffbc06802a247cfb1b26f4ee67eba8
-AssetOrigin:
-  serializedVersion: 1
-  productId: 4696
-  packageName: Robot Kyle | URP
-  packageVersion: 4.0
-  assetPath: Assets/UnityTechnologies/SpaceRobotKyle/Models/KyleRobot.fbx
-  uploadId: 683309
 ModelImporter:
   serializedVersion: 22200
   internalIDToNameTable: []
@@ -28,6 +21,8 @@ ModelImporter:
     optimizeGameObjects: 0
     removeConstantScaleCurves: 0
     motionNodeName: 
+    rigImportErrors: 
+    rigImportWarnings: 
     animationImportErrors: 
     animationImportWarnings: 
     animationRetargetingWarnings: 
@@ -787,3 +782,10 @@ ModelImporter:
   userData: 
   assetBundleName: 
   assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 4696
+  packageName: Robot Kyle | URP
+  packageVersion: 4.0
+  assetPath: Assets/UnityTechnologies/SpaceRobotKyle/Models/KyleRobot.fbx
+  uploadId: 847474

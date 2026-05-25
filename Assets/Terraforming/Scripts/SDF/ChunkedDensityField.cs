@@ -39,6 +39,8 @@ namespace Terraforming
         [SerializeField] private List<FieldChunk> chunks = new();
         public IReadOnlyList<FieldChunk> Chunks => chunks;
 
+        private readonly List<FieldChunk> expandedUpdatedChunks = new();
+
         // ─────────────────────────────────────────────
         //  초기화
         // ─────────────────────────────────────────────
@@ -163,7 +165,41 @@ namespace Terraforming
 
         public void NotifyChunksUpdated(List<FieldChunk> modifiedChunks)
         {
-            OnChunksUpdated?.Invoke(modifiedChunks);
+            if (modifiedChunks == null || modifiedChunks.Count == 0)
+            {
+                OnChunksUpdated?.Invoke(modifiedChunks);
+                return;
+            }
+
+            expandedUpdatedChunks.Clear();
+            var padding = unitSize;
+
+            foreach (var modifiedChunk in modifiedChunks)
+            {
+                AddUnique(expandedUpdatedChunks, modifiedChunk);
+
+                var bounds = modifiedChunk.FieldBounds;
+                bounds.Expand(Vector3.one * padding * 2f);
+
+                foreach (var chunk in chunks)
+                {
+                    if (chunk == modifiedChunk) continue;
+                    if (bounds.Intersects(chunk.FieldBounds))
+                    {
+                        AddUnique(expandedUpdatedChunks, chunk);
+                    }
+                }
+            }
+
+            OnChunksUpdated?.Invoke(expandedUpdatedChunks);
+        }
+
+        private static void AddUnique(List<FieldChunk> results, FieldChunk chunk)
+        {
+            if (chunk != null && !results.Contains(chunk))
+            {
+                results.Add(chunk);
+            }
         }
 
         /// <summary>Generator로 전체 필드를 재생성하고 모든 청크 기즈모 갱신</summary>

@@ -13,8 +13,6 @@ MonoBehaviour:
   m_Name: Multiple Perlin Generator
   m_EditorClassIdentifier: Assembly-CSharp::Terraforming.MultiplePerlinGenerator
   octaves:
-  - Amplitude: 0.1
-    NoiseScale: 0.05
   - Amplitude: 0.05
     NoiseScale: 0.1
   - Amplitude: 0.025
