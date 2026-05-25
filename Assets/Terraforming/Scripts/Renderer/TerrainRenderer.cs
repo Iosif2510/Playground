@@ -31,6 +31,13 @@ namespace Terraforming
         [SerializeField] private bool updateColliders = true;
         [SerializeField] private bool bakeCollidersAsync = true;
         [SerializeField] private bool colliderConvex;
+        [Header("Chunk Streaming")]
+        [SerializeField] private bool useChunkStreaming = true;
+        [SerializeField] private Transform streamingTarget;
+        [SerializeField] private float renderDistance = 96f;
+        [SerializeField] private float colliderDistance = 32f;
+        [SerializeField] private float unloadDistance = 128f;
+        [SerializeField] private float streamingRefreshInterval = 0.25f;
 
         private NativeArray<int> edgeTableNative;
         private NativeArray<int> triTableNative;
@@ -63,8 +70,14 @@ namespace Terraforming
         private readonly List<int> indicesCache = new();
         private readonly List<int> edgeVertexRemapCache = new();
         private readonly List<PendingColliderBake> pendingColliderBakes = new();
+        private readonly List<FieldChunk> streamedChunks = new();
+        private readonly List<FieldChunk> chunksToStreamIn = new();
+        private readonly List<FieldChunk> chunksToUnload = new();
+        private readonly List<FieldChunk> filteredChunks = new();
+        private readonly HashSet<FieldChunk> streamedChunkSet = new();
         
         private bool isInitialized = false;
+        private float streamingTimer;
 
         private void OnEnable()
         {
@@ -118,9 +131,15 @@ namespace Terraforming
             isInitialized = true;
         }
 
+        public void SetStreamingTarget(Transform target)
+        {
+            streamingTarget = target;
+        }
+
         private void Update()
         {
             CompleteReadyColliderBakes();
+            TickChunkStreaming();
         }
 
         private void InitializeTables()
@@ -165,14 +184,96 @@ namespace Terraforming
         [Sirenix.OdinInspector.Button]
         public void RegenerateAllMeshes()
         {
-            if (densityField == null || !densityField.Field.IsCreated || densityField.Chunks == null) return;
+            if (densityField == null || densityField.Chunks == null) return;
+            if (ShouldStreamChunks())
+            {
+                RefreshChunkStreaming(forceRemeshVisible: true);
+                return;
+            }
+
             ProcessChunks(densityField.Chunks);
         }
 
         public void RegeneratePartialMeshes(List<FieldChunk> chunksToUpdate)
         {
-            if (densityField == null || !densityField.Field.IsCreated || chunksToUpdate == null) return;
-            ProcessChunks(chunksToUpdate);
+            if (densityField == null || chunksToUpdate == null) return;
+            ProcessChunks(FilterRenderableChunks(chunksToUpdate));
+        }
+
+        private void TickChunkStreaming()
+        {
+            if (!ShouldStreamChunks() || densityField.Chunks == null) return;
+
+            streamingTimer -= Time.deltaTime;
+            if (streamingTimer > 0f) return;
+
+            streamingTimer = streamingRefreshInterval;
+            RefreshChunkStreaming(forceRemeshVisible: false);
+        }
+
+        private bool ShouldStreamChunks()
+        {
+            return useChunkStreaming && streamingTarget != null;
+        }
+
+        private void RefreshChunkStreaming(bool forceRemeshVisible)
+        {
+            streamedChunks.Clear();
+            chunksToStreamIn.Clear();
+            chunksToUnload.Clear();
+
+            foreach (var chunk in densityField.Chunks)
+            {
+                if (!chunk.RenderMesh) continue;
+                if (!IsChunkInDistance(chunk, renderDistance)) continue;
+
+                streamedChunks.Add(chunk);
+                if (forceRemeshVisible || !streamedChunkSet.Contains(chunk))
+                {
+                    chunksToStreamIn.Add(chunk);
+                    streamedChunkSet.Add(chunk);
+                }
+            }
+
+            foreach (var pair in chunkViews)
+            {
+                if (!IsChunkInDistance(pair.Key, unloadDistance))
+                {
+                    chunksToUnload.Add(pair.Key);
+                }
+            }
+
+            foreach (var chunk in chunksToUnload)
+            {
+                streamedChunkSet.Remove(chunk);
+                DestroyChunkView(chunk);
+            }
+
+            if (chunksToStreamIn.Count > 0)
+            {
+                ProcessChunks(chunksToStreamIn);
+            }
+        }
+
+        private IReadOnlyList<FieldChunk> FilterRenderableChunks(IReadOnlyList<FieldChunk> chunks)
+        {
+            if (!ShouldStreamChunks()) return chunks;
+
+            filteredChunks.Clear();
+            foreach (var chunk in chunks)
+            {
+                if (!chunk.RenderMesh || !IsChunkInDistance(chunk, renderDistance)) continue;
+                filteredChunks.Add(chunk);
+                streamedChunkSet.Add(chunk);
+            }
+
+            return filteredChunks;
+        }
+
+        private bool IsChunkInDistance(FieldChunk chunk, float distance)
+        {
+            var closest = chunk.FieldBounds.ClosestPoint(streamingTarget.position);
+            return (closest - streamingTarget.position).sqrMagnitude <= distance * distance;
         }
 
         private void ProcessChunks(IReadOnlyList<FieldChunk> chunksToRender)
@@ -183,13 +284,14 @@ namespace Terraforming
             foreach (var chunk in chunksToRender)
             {
                 if (!chunk.RenderMesh) continue;
+                chunk.LoadOrGenerate();
                 
-                var size = chunk.ActualSize;
+                var size = chunk.SampleSize;
                 int step = math.max(1, chunk.Lod);
 
-                int maxReadX = (chunk.OriginIndex.x + size.x < densityField.Resolution) ? size.x : size.x - 1;
-                int maxReadY = (chunk.OriginIndex.y + size.y < densityField.Resolution) ? size.y : size.y - 1;
-                int maxReadZ = (chunk.OriginIndex.z + size.z < densityField.Resolution) ? size.z : size.z - 1;
+                int maxReadX = size.x - 1;
+                int maxReadY = size.y - 1;
+                int maxReadZ = size.z - 1;
 
                 int cellsX = maxReadX / step;
                 int cellsY = maxReadY / step;
@@ -218,12 +320,12 @@ namespace Terraforming
             for (int i = 0; i < activeChunks.Count; i++)
             {
                 var chunk = activeChunks[i];
-                var size = chunk.ActualSize;
+                var size = chunk.SampleSize;
                 int step = math.max(1, chunk.Lod);
 
-                int maxReadX = (chunk.OriginIndex.x + size.x < resolution) ? size.x : size.x - 1;
-                int maxReadY = (chunk.OriginIndex.y + size.y < resolution) ? size.y : size.y - 1;
-                int maxReadZ = (chunk.OriginIndex.z + size.z < resolution) ? size.z : size.z - 1;
+                int maxReadX = size.x - 1;
+                int maxReadY = size.y - 1;
+                int maxReadZ = size.z - 1;
 
                 int cellsX = maxReadX / step;
                 int cellsY = maxReadY / step;
@@ -243,13 +345,12 @@ namespace Terraforming
 
                 var edgeJob = new MarchingCubeEdgeVertexJob
                 {
-                    Field = densityField.Field,
-                    Resolution = resolution,
+                    Field = chunk.Field,
                     UnitSize = unitSize,
                     IsoLevel = isoLevel,
-                    ChunkOriginIdx = chunk.OriginIndex,
                     WorldOrigin = chunk.WorldOrigin,
                     LodStep = step,
+                    SampleSize = size,
                     CellsPerAxis = new int3(cellsX, cellsY, cellsZ),
                     PointCounts = pointCounts,
                     XEdgeCount = xEdgeCount,
@@ -261,15 +362,14 @@ namespace Terraforming
 
                 var job = new MarchingCubeChunkJob
                 {
-                    Field = densityField.Field,
+                    Field = chunk.Field,
                     EdgeTable = edgeTableNative,
                     TriTable = triTableNative,
-                    Resolution = resolution,
                     UnitSize = unitSize,
                     IsoLevel = isoLevel,
-                    ChunkOriginIdx = chunk.OriginIndex,
                     WorldOrigin = chunk.WorldOrigin,
                     LodStep = step,
+                    SampleSize = size,
                     CellsPerAxis = new int3(cellsX, cellsY, cellsZ),
                     MaxReadBounds = new int3(maxReadX, maxReadY, maxReadZ),
                     PointCounts = pointCounts,
@@ -325,7 +425,7 @@ namespace Terraforming
                 view.mesh.RecalculateNormals();
                 view.mesh.RecalculateBounds();
 
-                RequestColliderBake(view);
+                RequestColliderBake(view, chunk);
             }
 
             outputQueues.Dispose();
@@ -352,9 +452,14 @@ namespace Terraforming
             return vertexIndex;
         }
 
-        private void RequestColliderBake(ChunkView view)
+        private void RequestColliderBake(ChunkView view, FieldChunk chunk)
         {
             if (!updateColliders || view.collider == null) return;
+            if (ShouldStreamChunks() && !IsChunkInDistance(chunk, colliderDistance))
+            {
+                ClearCollider(view);
+                return;
+            }
 
             var colliderMesh = new Mesh
             {
@@ -469,6 +574,32 @@ namespace Terraforming
                 view.colliderBakeVersion++;
             }
         }
+
+        private void DestroyChunkView(FieldChunk chunk)
+        {
+            if (!chunkViews.TryGetValue(chunk, out var view)) return;
+
+            RemovePendingColliderBakes(view);
+            if (view.colliderMesh != null) Destroy(view.colliderMesh);
+            if (view.mesh != null) Destroy(view.mesh);
+            if (view.go != null) Destroy(view.go);
+
+            chunkViews.Remove(chunk);
+            chunk.UnloadField();
+        }
+
+        private void RemovePendingColliderBakes(ChunkView view)
+        {
+            for (int i = pendingColliderBakes.Count - 1; i >= 0; i--)
+            {
+                var pendingBake = pendingColliderBakes[i];
+                if (pendingBake.View != view) continue;
+
+                pendingBake.Handle.Complete();
+                if (pendingBake.Mesh != null) Destroy(pendingBake.Mesh);
+                pendingColliderBakes.RemoveAt(i);
+            }
+        }
     }
 
     public struct BakeColliderMeshJob : IJob
@@ -487,14 +618,13 @@ namespace Terraforming
     {
         [ReadOnly] public NativeArray<half> Field;
 
-        public int Resolution;
         public float UnitSize;
         public float IsoLevel;
 
-        public int3 ChunkOriginIdx;
         public float3 WorldOrigin;
         public int LodStep;
 
+        public int3 SampleSize;
         public int3 CellsPerAxis;
         public int3 PointCounts;
         public int XEdgeCount;
@@ -502,11 +632,9 @@ namespace Terraforming
 
         public NativeArray<float3> EdgeVertices;
 
-        private int FlattenGlobal(int lx, int ly, int lz)
+        private int Flatten(int lx, int ly, int lz)
         {
-            return (ChunkOriginIdx.x + lx) +
-                   (ChunkOriginIdx.y + ly) * Resolution +
-                   (ChunkOriginIdx.z + lz) * Resolution * Resolution;
+            return lx + ly * SampleSize.x + lz * SampleSize.x * SampleSize.y;
         }
 
         private float3 GetWorldPosition(int lx, int ly, int lz)
@@ -553,8 +681,8 @@ namespace Terraforming
             int ly1 = ly0 + (axis == 1 ? LodStep : 0);
             int lz1 = lz0 + (axis == 2 ? LodStep : 0);
 
-            float value0 = Field[FlattenGlobal(lx0, ly0, lz0)];
-            float value1 = Field[FlattenGlobal(lx1, ly1, lz1)];
+            float value0 = Field[Flatten(lx0, ly0, lz0)];
+            float value1 = Field[Flatten(lx1, ly1, lz1)];
 
             float denominator = value1 - value0;
             float t = math.abs(denominator) > 0.000001f ? (IsoLevel - value0) / denominator : 0.5f;
@@ -573,14 +701,13 @@ namespace Terraforming
         [ReadOnly] public NativeArray<int> EdgeTable;
         [ReadOnly] public NativeArray<int> TriTable;
         
-        public int Resolution;
         public float UnitSize;
         public float IsoLevel;
 
-        public int3 ChunkOriginIdx;
         public float3 WorldOrigin;
         public int LodStep;
 
+        public int3 SampleSize;
         public int3 CellsPerAxis;
         public int3 MaxReadBounds;
         public int3 PointCounts;
@@ -589,11 +716,9 @@ namespace Terraforming
 
         public NativeQueue<IndexedTriangle>.ParallelWriter OutputQueue;
 
-        private int FlattenGlobal(int lx, int ly, int lz)
+        private int Flatten(int lx, int ly, int lz)
         {
-            return (ChunkOriginIdx.x + lx) + 
-                   (ChunkOriginIdx.y + ly) * Resolution + 
-                   (ChunkOriginIdx.z + lz) * Resolution * Resolution;
+            return lx + ly * SampleSize.x + lz * SampleSize.x * SampleSize.y;
         }
 
         private int GetEdgeVertexIndex(int ix, int iy, int iz, int cubeEdgeIndex)
@@ -644,14 +769,14 @@ namespace Terraforming
 
             var cubeValues = new FixedList128Bytes<float>();
 
-            cubeValues.Add(Field[FlattenGlobal(x, y, z)]);
-            cubeValues.Add(Field[FlattenGlobal(x + LodStep, y, z)]);
-            cubeValues.Add(Field[FlattenGlobal(x + LodStep, y, z + LodStep)]);
-            cubeValues.Add(Field[FlattenGlobal(x, y, z + LodStep)]);
-            cubeValues.Add(Field[FlattenGlobal(x, y + LodStep, z)]);
-            cubeValues.Add(Field[FlattenGlobal(x + LodStep, y + LodStep, z)]);
-            cubeValues.Add(Field[FlattenGlobal(x + LodStep, y + LodStep, z + LodStep)]);
-            cubeValues.Add(Field[FlattenGlobal(x, y + LodStep, z + LodStep)]);
+            cubeValues.Add(Field[Flatten(x, y, z)]);
+            cubeValues.Add(Field[Flatten(x + LodStep, y, z)]);
+            cubeValues.Add(Field[Flatten(x + LodStep, y, z + LodStep)]);
+            cubeValues.Add(Field[Flatten(x, y, z + LodStep)]);
+            cubeValues.Add(Field[Flatten(x, y + LodStep, z)]);
+            cubeValues.Add(Field[Flatten(x + LodStep, y + LodStep, z)]);
+            cubeValues.Add(Field[Flatten(x + LodStep, y + LodStep, z + LodStep)]);
+            cubeValues.Add(Field[Flatten(x, y + LodStep, z + LodStep)]);
 
             int cubeIndex = 0;
             for (var i = 0; i < 8; i++)

@@ -15,9 +15,17 @@ namespace Terraforming
         
         private void Initialize()
         {
+            if (player != null)
+            {
+                terrainRenderer.SetStreamingTarget(player.transform);
+            }
+
             terrainRenderer.Initialize();
             densityField.InitializeField();
-            player.SetActive(true);
+            if (player != null)
+            {
+                player.SetActive(true);
+            }
         }
     }
 }

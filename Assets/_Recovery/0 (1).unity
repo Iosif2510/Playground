@@ -1005,11 +1005,6 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 7978810107987169270, guid: 7ae956b4f54394e80818898d8f4d30c6, type: 3}
   m_PrefabInstance: {fileID: 817457902}
   m_PrefabAsset: {fileID: 0}
---- !u!4 &817457904 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 1114260476483171701, guid: 7ae956b4f54394e80818898d8f4d30c6, type: 3}
-  m_PrefabInstance: {fileID: 817457902}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1067237934
 GameObject:
   m_ObjectHideFlags: 0
@@ -1181,10 +1176,10 @@ MonoBehaviour:
   bakeCollidersAsync: 1
   colliderConvex: 0
   useChunkStreaming: 1
-  streamingTarget: {fileID: 817457904}
-  renderDistance: 16
+  streamingTarget: {fileID: 0}
+  renderDistance: 96
   colliderDistance: 32
-  unloadDistance: 32
+  unloadDistance: 128
   streamingRefreshInterval: 0.25
 --- !u!4 &1164207768
 Transform:

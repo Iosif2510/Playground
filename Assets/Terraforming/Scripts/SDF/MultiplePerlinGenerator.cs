@@ -22,7 +22,7 @@ namespace Terraforming
         
         public override void GenerateField(half[] field, float3 position, int resolution, float unitSize)
         {
-            throw new System.NotImplementedException();
+            base.GenerateField(field, position, resolution, unitSize);
         }
 
         public override void GenerateField(NativeArray<half> field, float3 position, int resolution, float unitSize)
@@ -41,6 +41,21 @@ namespace Terraforming
             var handle = job.Schedule(count, 64);
             handle.Complete();
             octaveArray.Dispose();
+        }
+
+        public override half SampleDensity(float3 worldPosition, float3 fieldOrigin, int resolution, float unitSize)
+        {
+            float noiseHeight = 0f;
+
+            if (octaves != null)
+            {
+                for (int i = 0; i < octaves.Count; i++)
+                {
+                    noiseHeight += noise.cnoise(worldPosition.xz * octaves[i].NoiseScale) * octaves[i].Amplitude;
+                }
+            }
+
+            return math.half((worldPosition.y * 2 / resolution) - noiseHeight);
         }
         
         [BurstCompile]

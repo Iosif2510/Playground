@@ -13,6 +13,7 @@ namespace Terraforming
         [SerializeField] private int resolution = 128;   // 전체 해상도 (chunkSize 배수 권장)
         [SerializeField] private float unitSize = 1.0f;
         [SerializeField] private int chunkSize = 16;
+        [SerializeField] private string storageFolderName = "TerraformingChunks";
 
         [Header("Gizmo")]
         [SerializeField] private bool drawGizmos = true;
@@ -21,9 +22,6 @@ namespace Terraforming
 
         [SerializeField] private DensityFieldGenerator fieldGenerator;
 
-        // ─── 전체 밀도 필드 ───────────────────────────
-        // Field[x + y*R + z*R*R]
-        // FieldChunk 들이 이 배열의 구간을 참조
         public NativeArray<half> Field { get; private set; }
 
         public int Resolution  => resolution;
@@ -32,6 +30,7 @@ namespace Terraforming
         public Mesh GizmoMesh        => gizmoMesh;
         public Material GizmoMaterial => gizmoMaterial;
         public bool DrawGizmos       => drawGizmos;
+        public string ChunkStoragePath => System.IO.Path.Combine(Application.persistentDataPath, storageFolderName, gameObject.scene.name);
         
         public event Action OnFieldUpdated;
         public event Action<List<FieldChunk>> OnChunksUpdated;
@@ -47,12 +46,7 @@ namespace Terraforming
         [Button]
         public void InitializeField()
         {
-            var count = resolution * resolution * resolution;
-            
             if (Field.IsCreated) Field.Dispose();
-            Field = new NativeArray<half>(count, Allocator.Persistent);
-
-            fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
 
             InitializeChunks();
             NotifyFieldUpdated();
@@ -163,6 +157,13 @@ namespace Terraforming
             OnFieldUpdated?.Invoke();
         }
 
+        public half SampleDensity(float3 worldPosition)
+        {
+            return fieldGenerator != null
+                ? fieldGenerator.SampleDensity(worldPosition, transform.position, resolution, unitSize)
+                : math.half(1f);
+        }
+
         public void NotifyChunksUpdated(List<FieldChunk> modifiedChunks)
         {
             if (modifiedChunks == null || modifiedChunks.Count == 0)
@@ -206,11 +207,12 @@ namespace Terraforming
         [Button]
         public void RegenerateField()
         {
-            if (!Field.IsCreated) return;
-            fieldGenerator.GenerateField(Field, transform.position, resolution, unitSize);
+            foreach (var chunk in chunks)
+            {
+                chunk.Dispose();
+            }
 
-            // Field 배열이 재사용되므로 Memory 슬라이스 재구성 없이 바로 GPU 갱신
-            foreach (var chunk in chunks) chunk.RefreshGizmo();
+            InitializeChunks();
             NotifyFieldUpdated();
         }
     }

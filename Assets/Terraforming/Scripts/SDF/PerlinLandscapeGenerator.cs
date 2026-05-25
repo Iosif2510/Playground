@@ -15,13 +15,7 @@ namespace Terraforming
         
         public override void GenerateField(half[] field, float3 position, int resolution, float unitSize)
         {
-            for (var i = 0; i < resolution * resolution * resolution; i++)
-            {
-                var pos = SimpleDensityField.GetWorldPositionFromIndex(i, resolution, unitSize, position);
-                
-                // noiseScale을 곱하여 정수 좌표 밖(소수점)을 샘플링하도록 수정
-                field[i] = math.half((pos.y * 2 / resolution) - noise.cnoise(pos.xz * noiseScale) * amplitude);
-            }
+            base.GenerateField(field, position, resolution, unitSize);
         }
 
         public override void GenerateField(NativeArray<half> field, float3 position, int resolution, float unitSize)
@@ -37,6 +31,11 @@ namespace Terraforming
             };
             var handle = job.Schedule(resolution * resolution * resolution, 64);
             handle.Complete();
+        }
+
+        public override half SampleDensity(float3 worldPosition, float3 fieldOrigin, int resolution, float unitSize)
+        {
+            return math.half((worldPosition.y * 2 / resolution) - noise.cnoise(worldPosition.xz * noiseScale) * amplitude);
         }
         
         [BurstCompile]

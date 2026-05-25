@@ -12,20 +12,17 @@ namespace Terraforming
 
         public override void GenerateField(half[] field, float3 position, int resolution, float unitSize)
         {
-            for (var i = 0; i < resolution * resolution * resolution; i++)
-            {
-                var pos = SimpleDensityField.GetWorldPositionFromIndex(i, resolution, unitSize, position);
-                field[i] = math.half(math.length(pos - position) - radius);
-            }
+            base.GenerateField(field, position, resolution, unitSize);
         }
 
         public override void GenerateField(Unity.Collections.NativeArray<half> field, float3 position, int resolution, float unitSize)
         {
-            for (var i = 0; i < resolution * resolution * resolution; i++)
-            {
-                var pos = SimpleDensityField.GetWorldPositionFromIndex(i, resolution, unitSize, position);
-                field[i] = math.half(math.length(pos - position) - radius);
-            }
+            base.GenerateField(field, position, resolution, unitSize);
+        }
+
+        public override half SampleDensity(float3 worldPosition, float3 fieldOrigin, int resolution, float unitSize)
+        {
+            return math.half(math.length(worldPosition - fieldOrigin) - radius);
         }
     }
 }
