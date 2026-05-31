@@ -37,6 +37,7 @@ namespace Terraforming
         private ComputeBuffer gizmoBuffer;
         private ComputeBuffer argsBuffer;
         private Bounds gizmoBounds;
+        private Bounds fieldBounds;
         
 
         public FieldChunk(ChunkedDensityField owner, int3 originIndex, int3 actualSize, float3 worldOrigin)
@@ -54,9 +55,16 @@ namespace Terraforming
         {
             get
             {
-                var size   = (Vector3)((float3)(ActualSize - 1) * owner.UnitSize);
-                var center = Vector3.Lerp(WorldOrigin, WorldOrigin + (float3)(ActualSize - 1) * owner.UnitSize, 0.5f);
-                return new Bounds(center, size);
+                if (fieldBounds == default)
+                {
+                    var size = (Vector3)((float3)(ActualSize - 1) * owner.UnitSize);
+                    var center = Vector3.Lerp(WorldOrigin, WorldOrigin + (float3)(ActualSize - 1) * owner.UnitSize,
+                        0.5f);
+                    fieldBounds = new Bounds(center, size);
+
+                }
+
+                return fieldBounds;
             }
         }
 
@@ -64,9 +72,9 @@ namespace Terraforming
         //  LOD 및 렌더링 설정
         // ─────────────────────────────────────────────
         [SerializeField] private bool renderMesh = true;
-        [SerializeField] private int lod = 1;
+        [SerializeField] private int lod = 0;
         public bool RenderMesh => renderMesh;
-        public int Lod => lod;
+        public int LodStep => 1 << lod;
 
         // ─────────────────────────────────────────────
         //  초기화 / 해제

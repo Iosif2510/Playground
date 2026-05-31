@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using Sirenix.OdinInspector;
 using Unity.Mathematics;
 using UnityEngine;
@@ -6,6 +7,7 @@ using UnityEngine.Rendering;
 
 namespace Terraforming
 {
+    [Obsolete]
     public class SimpleMarchingCubeGenerator : MonoBehaviour
     {
         private struct Triangle
@@ -113,7 +115,7 @@ namespace Terraforming
             foreach (var chunk in chunks)
             {
                 var size = chunk.ActualSize;
-                int step = math.max(1, chunk.Lod);
+                int step = math.max(1, chunk.LodStep);
 
                 // Allow processing up to size.x because GetDensity reads global Field seamlessly
                 int maxReadX = (chunk.OriginIndex.x + size.x < densityField.Resolution) ? size.x : size.x - 1;

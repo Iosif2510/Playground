@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -8,20 +7,6 @@ using UnityEngine.Rendering;
 
 namespace Terraforming
 {
-    public struct Triangle
-    {
-        public float3 A;
-        public float3 B;
-        public float3 C;
-    }
-
-    public struct IndexedTriangle
-    {
-        public int A;
-        public int B;
-        public int C;
-    }
-
     public class TerrainRenderer : MonoBehaviour
     {
         [SerializeField] private ChunkedDensityField densityField;
@@ -32,8 +17,12 @@ namespace Terraforming
         [SerializeField] private bool bakeCollidersAsync = true;
         [SerializeField] private bool colliderConvex;
 
+        private Camera mainCamera;
+
         private NativeArray<int> edgeTableNative;
         private NativeArray<int> triTableNative;
+        
+        private readonly Plane[] frustumPlanes = new Plane[6];
 
         // 청크별 고유 렌더러 오브젝트들을 관리
         private class ChunkView 
@@ -116,11 +105,25 @@ namespace Terraforming
             
             InitializeTables();
             isInitialized = true;
+            mainCamera = Camera.main;
         }
 
         private void Update()
         {
             CompleteReadyColliderBakes();
+            Occlude();
+        }
+
+        private void Occlude()
+        {
+            GeometryUtility.CalculateFrustumPlanes(mainCamera, frustumPlanes);
+            foreach (var kvp in chunkViews)
+            {
+                var chunk = kvp.Key;
+                var view = kvp.Value;
+                bool visible = GeometryUtility.TestPlanesAABB(frustumPlanes, chunk.FieldBounds);
+                view.renderer.enabled = visible;
+            }
         }
 
         private void InitializeTables()
@@ -185,7 +188,7 @@ namespace Terraforming
                 if (!chunk.RenderMesh) continue;
                 
                 var size = chunk.ActualSize;
-                int step = math.max(1, chunk.Lod);
+                int step = math.max(1, chunk.LodStep);
 
                 int maxReadX = (chunk.OriginIndex.x + size.x < densityField.Resolution) ? size.x : size.x - 1;
                 int maxReadY = (chunk.OriginIndex.y + size.y < densityField.Resolution) ? size.y : size.y - 1;
@@ -219,7 +222,7 @@ namespace Terraforming
             {
                 var chunk = activeChunks[i];
                 var size = chunk.ActualSize;
-                int step = math.max(1, chunk.Lod);
+                int step = math.max(1, chunk.LodStep);
 
                 int maxReadX = (chunk.OriginIndex.x + size.x < resolution) ? size.x : size.x - 1;
                 int maxReadY = (chunk.OriginIndex.y + size.y < resolution) ? size.y : size.y - 1;
@@ -467,212 +470,6 @@ namespace Terraforming
             if (view != null)
             {
                 view.colliderBakeVersion++;
-            }
-        }
-    }
-
-    public struct BakeColliderMeshJob : IJob
-    {
-        public EntityId MeshId;
-        public bool Convex;
-
-        public void Execute()
-        {
-            Physics.BakeMesh(MeshId, Convex);
-        }
-    }
-
-    [BurstCompile]
-    public struct MarchingCubeEdgeVertexJob : IJobParallelFor
-    {
-        [ReadOnly] public NativeArray<half> Field;
-
-        public int Resolution;
-        public float UnitSize;
-        public float IsoLevel;
-
-        public int3 ChunkOriginIdx;
-        public float3 WorldOrigin;
-        public int LodStep;
-
-        public int3 CellsPerAxis;
-        public int3 PointCounts;
-        public int XEdgeCount;
-        public int YEdgeCount;
-
-        public NativeArray<float3> EdgeVertices;
-
-        private int FlattenGlobal(int lx, int ly, int lz)
-        {
-            return (ChunkOriginIdx.x + lx) +
-                   (ChunkOriginIdx.y + ly) * Resolution +
-                   (ChunkOriginIdx.z + lz) * Resolution * Resolution;
-        }
-
-        private float3 GetWorldPosition(int lx, int ly, int lz)
-        {
-            return WorldOrigin + new float3(lx, ly, lz) * UnitSize;
-        }
-
-        public void Execute(int index)
-        {
-            int axis;
-            int px;
-            int py;
-            int pz;
-
-            if (index < XEdgeCount)
-            {
-                axis = 0;
-                px = index % CellsPerAxis.x;
-                py = (index / CellsPerAxis.x) % PointCounts.y;
-                pz = index / (CellsPerAxis.x * PointCounts.y);
-            }
-            else if (index < XEdgeCount + YEdgeCount)
-            {
-                axis = 1;
-                int localIndex = index - XEdgeCount;
-                px = localIndex % PointCounts.x;
-                py = (localIndex / PointCounts.x) % CellsPerAxis.y;
-                pz = localIndex / (PointCounts.x * CellsPerAxis.y);
-            }
-            else
-            {
-                axis = 2;
-                int localIndex = index - XEdgeCount - YEdgeCount;
-                px = localIndex % PointCounts.x;
-                py = (localIndex / PointCounts.x) % PointCounts.y;
-                pz = localIndex / (PointCounts.x * PointCounts.y);
-            }
-
-            int lx0 = px * LodStep;
-            int ly0 = py * LodStep;
-            int lz0 = pz * LodStep;
-
-            int lx1 = lx0 + (axis == 0 ? LodStep : 0);
-            int ly1 = ly0 + (axis == 1 ? LodStep : 0);
-            int lz1 = lz0 + (axis == 2 ? LodStep : 0);
-
-            float value0 = Field[FlattenGlobal(lx0, ly0, lz0)];
-            float value1 = Field[FlattenGlobal(lx1, ly1, lz1)];
-
-            float denominator = value1 - value0;
-            float t = math.abs(denominator) > 0.000001f ? (IsoLevel - value0) / denominator : 0.5f;
-
-            EdgeVertices[index] = math.lerp(
-                GetWorldPosition(lx0, ly0, lz0),
-                GetWorldPosition(lx1, ly1, lz1),
-                t);
-        }
-    }
-
-    [BurstCompile]
-    public struct MarchingCubeChunkJob : IJobParallelFor
-    {
-        [ReadOnly] public NativeArray<half> Field;
-        [ReadOnly] public NativeArray<int> EdgeTable;
-        [ReadOnly] public NativeArray<int> TriTable;
-        
-        public int Resolution;
-        public float UnitSize;
-        public float IsoLevel;
-
-        public int3 ChunkOriginIdx;
-        public float3 WorldOrigin;
-        public int LodStep;
-
-        public int3 CellsPerAxis;
-        public int3 MaxReadBounds;
-        public int3 PointCounts;
-        public int XEdgeCount;
-        public int YEdgeCount;
-
-        public NativeQueue<IndexedTriangle>.ParallelWriter OutputQueue;
-
-        private int FlattenGlobal(int lx, int ly, int lz)
-        {
-            return (ChunkOriginIdx.x + lx) + 
-                   (ChunkOriginIdx.y + ly) * Resolution + 
-                   (ChunkOriginIdx.z + lz) * Resolution * Resolution;
-        }
-
-        private int GetEdgeVertexIndex(int ix, int iy, int iz, int cubeEdgeIndex)
-        {
-            return cubeEdgeIndex switch
-            {
-                0 => GetXEdgeIndex(ix, iy, iz),
-                1 => GetZEdgeIndex(ix + 1, iy, iz),
-                2 => GetXEdgeIndex(ix, iy, iz + 1),
-                3 => GetZEdgeIndex(ix, iy, iz),
-                4 => GetXEdgeIndex(ix, iy + 1, iz),
-                5 => GetZEdgeIndex(ix + 1, iy + 1, iz),
-                6 => GetXEdgeIndex(ix, iy + 1, iz + 1),
-                7 => GetZEdgeIndex(ix, iy + 1, iz),
-                8 => GetYEdgeIndex(ix, iy, iz),
-                9 => GetYEdgeIndex(ix + 1, iy, iz),
-                10 => GetYEdgeIndex(ix + 1, iy, iz + 1),
-                _ => GetYEdgeIndex(ix, iy, iz + 1)
-            };
-        }
-
-        private int GetXEdgeIndex(int px, int py, int pz)
-        {
-            return px + py * CellsPerAxis.x + pz * CellsPerAxis.x * PointCounts.y;
-        }
-
-        private int GetYEdgeIndex(int px, int py, int pz)
-        {
-            return XEdgeCount + px + py * PointCounts.x + pz * PointCounts.x * CellsPerAxis.y;
-        }
-
-        private int GetZEdgeIndex(int px, int py, int pz)
-        {
-            return XEdgeCount + YEdgeCount + px + py * PointCounts.x + pz * PointCounts.x * PointCounts.y;
-        }
-
-        public void Execute(int index)
-        {
-            int ix = index % CellsPerAxis.x;
-            int iy = (index / CellsPerAxis.x) % CellsPerAxis.y;
-            int iz = index / (CellsPerAxis.x * CellsPerAxis.y);
-
-            int x = ix * LodStep;
-            int y = iy * LodStep;
-            int z = iz * LodStep;
-
-            if (x + LodStep > MaxReadBounds.x || y + LodStep > MaxReadBounds.y || z + LodStep > MaxReadBounds.z) return;
-
-            var cubeValues = new FixedList128Bytes<float>();
-
-            cubeValues.Add(Field[FlattenGlobal(x, y, z)]);
-            cubeValues.Add(Field[FlattenGlobal(x + LodStep, y, z)]);
-            cubeValues.Add(Field[FlattenGlobal(x + LodStep, y, z + LodStep)]);
-            cubeValues.Add(Field[FlattenGlobal(x, y, z + LodStep)]);
-            cubeValues.Add(Field[FlattenGlobal(x, y + LodStep, z)]);
-            cubeValues.Add(Field[FlattenGlobal(x + LodStep, y + LodStep, z)]);
-            cubeValues.Add(Field[FlattenGlobal(x + LodStep, y + LodStep, z + LodStep)]);
-            cubeValues.Add(Field[FlattenGlobal(x, y + LodStep, z + LodStep)]);
-
-            int cubeIndex = 0;
-            for (var i = 0; i < 8; i++)
-            {
-                if (cubeValues[i] < IsoLevel) cubeIndex |= (1 << i);
-            }
-
-            var edgeTableValue = EdgeTable[cubeIndex];
-            if (edgeTableValue == 0) return;
-
-            for (int i = 0; i < 16; i += 3)
-            {
-                int triIndex = TriTable[cubeIndex * 16 + i];
-                if (triIndex == -1) break;
-
-                OutputQueue.Enqueue(new IndexedTriangle
-                {
-                    A = GetEdgeVertexIndex(ix, iy, iz, triIndex),
-                    B = GetEdgeVertexIndex(ix, iy, iz, TriTable[cubeIndex * 16 + i + 1]),
-                    C = GetEdgeVertexIndex(ix, iy, iz, TriTable[cubeIndex * 16 + i + 2])
-                });
             }
         }
     }

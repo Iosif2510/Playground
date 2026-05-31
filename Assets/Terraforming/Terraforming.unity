@@ -427,6 +427,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Terraforming.Pointer
   mainCamera: {fileID: 1450364820}
+  lockCursor: 1
+  minFillDistance: 1
   densityField: {fileID: 1067237935}
   modifyRadius: 1
   modifySpeed: 10
@@ -1032,9 +1034,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b46c54b7b8494da5a5152dcefc46bfa6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Terraforming.ChunkedDensityField
-  resolution: 256
+  resolution: 128
   unitSize: 0.5
-  chunkSize: 16
+  chunkSize: 32
   drawGizmos: 0
   gizmoMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   gizmoMaterial: {fileID: 2100000, guid: 8b1f8e56c91d47b4e96a49c17c7b6d4f, type: 2}
@@ -1169,6 +1171,9 @@ MonoBehaviour:
   densityField: {fileID: 1067237935}
   isoLevel: 0
   terrainMaterial: {fileID: 2100000, guid: dce0a3657d9e5cb4eb3e3d32ede6e4bf, type: 2}
+  updateColliders: 1
+  bakeCollidersAsync: 1
+  colliderConvex: 0
 --- !u!4 &1164207768
 Transform:
   m_ObjectHideFlags: 0

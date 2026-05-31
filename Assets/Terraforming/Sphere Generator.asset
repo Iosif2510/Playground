@@ -12,4 +12,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 39565d6f37ec4d30b7f7d4bdfaa5dce9, type: 3}
   m_Name: Sphere Generator
   m_EditorClassIdentifier: Assembly-CSharp::Terraforming.SphereGenerator
-  radius: 5.4
+  radius: 3
