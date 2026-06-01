@@ -23,6 +23,8 @@ namespace Terraforming
         public int XEdgeCount;
         public int YEdgeCount;
 
+        public bool Interpolate;
+
         public NativeArray<float3> EdgeVertices;
 
         private int FlattenGlobal(int lx, int ly, int lz)
@@ -82,10 +84,12 @@ namespace Terraforming
             float denominator = value1 - value0;
             float t = math.abs(denominator) > 0.000001f ? (IsoLevel - value0) / denominator : 0.5f;
 
-            EdgeVertices[index] = math.lerp(
-                GetWorldPosition(lx0, ly0, lz0),
-                GetWorldPosition(lx1, ly1, lz1),
-                t);
+            EdgeVertices[index] = Interpolate
+                ? math.lerp(
+                    GetWorldPosition(lx0, ly0, lz0),
+                    GetWorldPosition(lx1, ly1, lz1),
+                    t)
+                : (GetWorldPosition(lx0, ly0, lz0) + GetWorldPosition(lx1, ly1, lz1)) / 2f;
         }
     }
 }

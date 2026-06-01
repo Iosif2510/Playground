@@ -88,7 +88,7 @@ Material:
     - _Resolution: 16
     m_Floats:
     - _AddPrecomputedVelocity: 0
-    - _Alpha: 0.843
+    - _Alpha: 0.339
     - _AlphaClip: 0
     - _AlphaToMask: 0
     - _Blend: 0
@@ -127,7 +127,9 @@ Material:
     - _ZWrite: 0
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 0.7764706}
+    - _CenterOffset: {r: 0, g: 0, b: 0, a: 0}
     - _Color: {r: 1, g: 1, b: 1, a: 0.7764706}
+    - _Dimensions: {r: 1, g: 1, b: 1, a: 0}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []

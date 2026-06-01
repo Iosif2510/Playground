@@ -16,6 +16,8 @@ namespace Terraforming
         [SerializeField] private bool updateColliders = true;
         [SerializeField] private bool bakeCollidersAsync = true;
         [SerializeField] private bool colliderConvex;
+        [SerializeField] private bool frustumOcclude;
+        [SerializeField] private bool interpolate = true;
 
         private Camera mainCamera;
 
@@ -111,10 +113,10 @@ namespace Terraforming
         private void Update()
         {
             CompleteReadyColliderBakes();
-            Occlude();
+            if (frustumOcclude) FrustumOcclude();
         }
 
-        private void Occlude()
+        private void FrustumOcclude()
         {
             GeometryUtility.CalculateFrustumPlanes(mainCamera, frustumPlanes);
             foreach (var kvp in chunkViews)
@@ -257,7 +259,8 @@ namespace Terraforming
                     PointCounts = pointCounts,
                     XEdgeCount = xEdgeCount,
                     YEdgeCount = yEdgeCount,
-                    EdgeVertices = edgeVertices
+                    EdgeVertices = edgeVertices,
+                    Interpolate = interpolate
                 };
 
                 var edgeHandle = edgeJob.Schedule(edgeCount, 64);

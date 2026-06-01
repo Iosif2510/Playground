@@ -155,7 +155,7 @@ namespace Terraforming
             }
         }
 
-        private List<Triangle> MarchCube(int3 indexPoint, FieldChunk chunk, int step)
+        private List<Triangle> MarchCube(int3 indexPoint, FieldChunk chunk, int step, bool interpolate = true)
         {
             var x = indexPoint.x;
             var y = indexPoint.y;
@@ -188,7 +188,7 @@ namespace Terraforming
             
             var triangleList = new List<Triangle>();
 
-            if (cubeIndex == 0 || cubeIndex == 255) return triangleList;
+            if (cubeIndex is 0 or 255) return triangleList;
 
             for (var i = 0; i < 12; i++)
             {
@@ -197,7 +197,9 @@ namespace Terraforming
                 var point2 = cubePoints[edgeList[i].second];
                 var value1 = cubeValues[edgeList[i].first];
                 var value2 = cubeValues[edgeList[i].second];
-                vertList[i] = Interpolate(point1, point2, value1, value2, isoLevel);
+                vertList[i] = interpolate
+                    ? Interpolate(point1, point2, value1, value2, isoLevel)
+                    : (point1 + point2) / 2;
             }
 
             for (int i = 0; LookupTable.triangleTable[cubeIndex, i] != -1; i += 3)
