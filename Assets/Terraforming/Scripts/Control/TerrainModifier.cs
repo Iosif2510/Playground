@@ -56,10 +56,7 @@ namespace Terraforming
                 }
             }
             
-            if (timer >= timeSpan)
-            {
-                
-            }
+
             timer += Time.deltaTime;
         }
 

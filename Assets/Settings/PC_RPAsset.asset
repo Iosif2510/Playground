@@ -23,7 +23,7 @@ MonoBehaviour:
   m_RequireOpaqueTexture: 1
   m_OpaqueDownsampling: 1
   m_SupportsTerrainHoles: 1
-  m_SupportsHDR: 1
+  m_SupportsHDR: 0
   m_HDRColorBufferPrecision: 0
   m_MSAA: 1
   m_RenderScale: 1
@@ -38,8 +38,8 @@ MonoBehaviour:
   m_ProbeVolumeBlendingMemoryBudget: 256
   m_SupportProbeVolumeGPUStreaming: 0
   m_SupportProbeVolumeDiskStreaming: 0
-  m_SupportProbeVolumeScenarios: 0
-  m_SupportProbeVolumeScenarioBlending: 0
+  m_SupportProbeVolumeScenarios: 1
+  m_SupportProbeVolumeScenarioBlending: 1
   m_ProbeVolumeSHBands: 1
   m_MainLightRenderingMode: 1
   m_MainLightShadowsSupported: 1

@@ -431,7 +431,7 @@ MonoBehaviour:
   minFillDistance: 1
   densityField: {fileID: 1067237935}
   modifyRadius: 1
-  modifySpeed: 10
+  modifySpeed: 3
 --- !u!1001 &817457902
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1034,13 +1034,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b46c54b7b8494da5a5152dcefc46bfa6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Terraforming.ChunkedDensityField
-  resolution: 64
+  resolution: 256
   unitSize: 0.5
-  chunkSize: 16
+  chunkSize: 32
   drawGizmos: 0
   gizmoMesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
   gizmoMaterial: {fileID: 2100000, guid: 8b1f8e56c91d47b4e96a49c17c7b6d4f, type: 2}
-  fieldGenerator: {fileID: 11400000, guid: 2516386ba96e4b0439edfa5a687640ed, type: 2}
+  fieldGenerator: {fileID: 11400000, guid: 032e13df2bd25fa478fdc7b05726a2cf, type: 2}
   chunks: []
 --- !u!4 &1067237936
 Transform:
@@ -1174,7 +1174,7 @@ MonoBehaviour:
   updateColliders: 1
   bakeCollidersAsync: 1
   colliderConvex: 0
-  frustumOcclude: 0
+  frustumOcclude: 1
   interpolate: 1
 --- !u!4 &1164207768
 Transform:
