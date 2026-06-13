@@ -19,6 +19,8 @@ namespace Terraforming
         [SerializeField] private Mesh gizmoMesh;
         [SerializeField] private Material gizmoMaterial;
 
+        [SerializeField] private float chunkModifyRadiusMargin = 0.1f;
+
         [SerializeField] private DensityFieldGenerator fieldGenerator;
 
         // ─── 전체 밀도 필드 ───────────────────────────
@@ -39,7 +41,11 @@ namespace Terraforming
         [SerializeField] private List<FieldChunk> chunks = new();
         public IReadOnlyList<FieldChunk> Chunks => chunks;
 
-        private readonly List<FieldChunk> expandedUpdatedChunks = new();
+        // private readonly List<FieldChunk> expandedUpdatedChunks = new();
+        private readonly List<FieldChunk> highlightedChunks = new();
+
+        private FieldChunk[] chunkGrid = Array.Empty<FieldChunk>();
+        private int chunksPerAxis;
 
         // ─────────────────────────────────────────────
         //  초기화
@@ -60,10 +66,12 @@ namespace Terraforming
 
         private void InitializeChunks()
         {
+            ClearHighlightedChunks();
             foreach (var chunk in chunks) chunk.Dispose();
             chunks.Clear();
 
-            int chunksPerAxis = Mathf.CeilToInt((float)resolution / chunkSize);
+            chunksPerAxis = Mathf.CeilToInt((float)resolution / chunkSize);
+            chunkGrid = new FieldChunk[chunksPerAxis * chunksPerAxis * chunksPerAxis];
             var fieldCenter   = new float3(resolution / 2f, resolution / 2f, resolution / 2f);
 
             for (var cx = 0; cx < chunksPerAxis; cx++)
@@ -86,6 +94,7 @@ namespace Terraforming
                 var chunk = new FieldChunk(this, originIndex, actualSize, worldOrigin);
                 chunk.Initialize();
                 chunks.Add(chunk);
+                chunkGrid[FlattenChunkIndex(cx, cy, cz)] = chunk;
             }
         }
 
@@ -118,6 +127,7 @@ namespace Terraforming
         /// <summary>월드 좌표를 포함하는 청크 반환 (없으면 null)</summary>
         public FieldChunk GetChunk(Vector3 position)
         {
+            ClearHighlightedChunks();
             FieldChunk result = null;
             foreach (var chunk in chunks)
             {
@@ -125,6 +135,12 @@ namespace Terraforming
                 chunk.DrawBounds(contains);
                 if (contains) result = chunk;
             }
+
+            if (result != null)
+            {
+                highlightedChunks.Add(result);
+            }
+
             return result;
         }
 
@@ -132,14 +148,51 @@ namespace Terraforming
         public void GetChunksInRadius(Vector3 position, float radius, List<FieldChunk> results)
         {
             results.Clear();
+            ClearHighlightedChunks();
+
+            if (chunks.Count == 0 || chunkGrid.Length == 0 || chunkSize <= 0 || unitSize <= 0f || radius < 0f)
+            {
+                return;
+            }
+
+            var fieldPosition = WorldToFieldPosition(position);
+            var radiusInFieldUnits = radius / unitSize;
+
+            var minField = new int3(
+                math.clamp(Mathf.FloorToInt(fieldPosition.x - radiusInFieldUnits), 0, resolution - 1),
+                math.clamp(Mathf.FloorToInt(fieldPosition.y - radiusInFieldUnits), 0, resolution - 1),
+                math.clamp(Mathf.FloorToInt(fieldPosition.z - radiusInFieldUnits), 0, resolution - 1));
+            var maxField = new int3(
+                math.clamp(Mathf.CeilToInt(fieldPosition.x + radiusInFieldUnits), 0, resolution - 1),
+                math.clamp(Mathf.CeilToInt(fieldPosition.y + radiusInFieldUnits), 0, resolution - 1),
+                math.clamp(Mathf.CeilToInt(fieldPosition.z + radiusInFieldUnits), 0, resolution - 1));
+
+            if (minField.x > maxField.x || minField.y > maxField.y || minField.z > maxField.z)
+            {
+                return;
+            }
+
+            var minChunk = new int3(minField.x / chunkSize, minField.y / chunkSize, minField.z / chunkSize);
+            var maxChunk = new int3(maxField.x / chunkSize, maxField.y / chunkSize, maxField.z / chunkSize);
             var sqrRadius = radius * radius;
 
-            foreach (var chunk in chunks)
+            // for (var cz = math.max(minChunk.z - 1, 0); cz <= math.min(maxChunk.z + 1, chunksPerAxis); cz++)
+            // for (var cy = math.max(minChunk.y - 1, 0); cy <= math.min(maxChunk.y + 1, chunksPerAxis); cy++)
+            // for (var cx = math.max(minChunk.x - 1, 0); cx <= math.min(maxChunk.x + 1, chunksPerAxis); cx++)
+            for (var cz = minChunk.z; cz <= maxChunk.z; cz++)
+            for (var cy = minChunk.y; cy <= maxChunk.y; cy++)
+            for (var cx = minChunk.x; cx <= maxChunk.x; cx++)
             {
+                var chunk = chunkGrid[FlattenChunkIndex(cx, cy, cz)];
+                if (chunk == null) continue;
+
                 var closest = chunk.FieldBounds.ClosestPoint(position);
-                var overlaps = (closest - position).sqrMagnitude <= sqrRadius;
-                chunk.DrawBounds(overlaps);
-                if (overlaps) results.Add(chunk);
+                var overlaps = (closest - position).sqrMagnitude <= sqrRadius + chunkModifyRadiusMargin;
+                if (!overlaps) continue;
+
+                // chunk.DrawBounds(true);
+                highlightedChunks.Add(chunk);
+                results.Add(chunk);
             }
         }
 
@@ -165,33 +218,7 @@ namespace Terraforming
 
         public void NotifyChunksUpdated(List<FieldChunk> modifiedChunks)
         {
-            if (modifiedChunks == null || modifiedChunks.Count == 0)
-            {
-                OnChunksUpdated?.Invoke(modifiedChunks);
-                return;
-            }
-
-            expandedUpdatedChunks.Clear();
-            var padding = unitSize;
-
-            foreach (var modifiedChunk in modifiedChunks)
-            {
-                AddUnique(expandedUpdatedChunks, modifiedChunk);
-
-                var bounds = modifiedChunk.FieldBounds;
-                bounds.Expand(Vector3.one * padding * 2f);
-
-                foreach (var chunk in chunks)
-                {
-                    if (chunk == modifiedChunk) continue;
-                    if (bounds.Intersects(chunk.FieldBounds))
-                    {
-                        AddUnique(expandedUpdatedChunks, chunk);
-                    }
-                }
-            }
-
-            OnChunksUpdated?.Invoke(expandedUpdatedChunks);
+            OnChunksUpdated?.Invoke(modifiedChunks);
         }
 
         private static void AddUnique(List<FieldChunk> results, FieldChunk chunk)
@@ -200,6 +227,27 @@ namespace Terraforming
             {
                 results.Add(chunk);
             }
+        }
+
+        private int FlattenChunkIndex(int cx, int cy, int cz)
+        {
+            return cx + cy * chunksPerAxis + cz * chunksPerAxis * chunksPerAxis;
+        }
+
+        private float3 WorldToFieldPosition(Vector3 position)
+        {
+            var fieldCenter = new float3(resolution / 2f, resolution / 2f, resolution / 2f);
+            return ((float3)position - (float3)transform.position) / unitSize + fieldCenter;
+        }
+
+        private void ClearHighlightedChunks()
+        {
+            foreach (var chunk in highlightedChunks)
+            {
+                chunk.DrawBounds(false);
+            }
+
+            highlightedChunks.Clear();
         }
 
         /// <summary>Generator로 전체 필드를 재생성하고 모든 청크 기즈모 갱신</summary>

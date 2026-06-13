@@ -4,6 +4,7 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Serialization;
 
 namespace Terraforming
 {
@@ -16,7 +17,6 @@ namespace Terraforming
         [SerializeField] private bool updateColliders = true;
         [SerializeField] private bool bakeCollidersAsync = true;
         [SerializeField] private bool colliderConvex;
-        [SerializeField] private bool frustumOcclude;
         [SerializeField] private bool interpolate = true;
 
         private Camera mainCamera;
@@ -113,19 +113,7 @@ namespace Terraforming
         private void Update()
         {
             CompleteReadyColliderBakes();
-            if (frustumOcclude) FrustumOcclude();
-        }
-
-        private void FrustumOcclude()
-        {
-            GeometryUtility.CalculateFrustumPlanes(mainCamera, frustumPlanes);
-            foreach (var kvp in chunkViews)
-            {
-                var chunk = kvp.Key;
-                var view = kvp.Value;
-                bool visible = GeometryUtility.TestPlanesAABB(frustumPlanes, chunk.FieldBounds);
-                view.renderer.enabled = visible;
-            }
+            // if (frustumCull) FrustumCull();
         }
 
         private void InitializeTables()

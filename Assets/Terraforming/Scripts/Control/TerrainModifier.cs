@@ -37,27 +37,34 @@ namespace Terraforming
             if (!isHit) return;
             var timeSpan = 1 / modifySpeed;
 
-            if ((Mouse.current.leftButton.isPressed && rayHit.distance >= minFillDistance || Mouse.current.rightButton.isPressed) && timer >= timeSpan)
+            if ((Mouse.current.leftButton.isPressed && rayHit.distance >= minFillDistance || Mouse.current.rightButton.isPressed))
             {
-                timer -= timeSpan;
-                densityField.GetChunksInRadius(rayHit.point, modifyRadius, hitChunks);
-                bool fieldModified = false;
-                foreach (var densityChunk in hitChunks)
+                if (timer >= timeSpan)
                 {
-                    if (Mouse.current.leftButton.isPressed)
-                        fieldModified |= densityChunk.ModifySphereVolume(rayHit.point, modifyRadius, FieldChunk.ModifyMethod.Fill);
-                    else if (Mouse.current.rightButton.isPressed) 
-                        fieldModified |= densityChunk.ModifySphereVolume(rayHit.point, modifyRadius, FieldChunk.ModifyMethod.Carve);
+                    timer -= timeSpan;
+                    Modify(rayHit);
                 }
-                
-                if (fieldModified)
-                {
-                    densityField.NotifyChunksUpdated(hitChunks);
-                }
+                else timer += Time.deltaTime;
             }
             
+        }
 
-            timer += Time.deltaTime;
+        private void Modify(RaycastHit rayHit)
+        {
+            densityField.GetChunksInRadius(rayHit.point, modifyRadius, hitChunks);
+            bool fieldModified = false;
+            foreach (var densityChunk in hitChunks)
+            {
+                if (Mouse.current.leftButton.isPressed)
+                    fieldModified |= densityChunk.ModifySphereVolume(rayHit.point, modifyRadius, FieldChunk.ModifyMethod.Fill);
+                else if (Mouse.current.rightButton.isPressed) 
+                    fieldModified |= densityChunk.ModifySphereVolume(rayHit.point, modifyRadius, FieldChunk.ModifyMethod.Carve);
+            }
+                
+            if (fieldModified)
+            {
+                densityField.NotifyChunksUpdated(hitChunks);
+            }
         }
 
         private void OnDrawGizmos()

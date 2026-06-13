@@ -160,40 +160,64 @@ namespace Terraforming
 
         public bool ModifySphereVolume(float3 position, float radius, ModifyMethod method)
         {
-            bool modified = false;
             var fieldArray = owner.Field;
+            if (!fieldArray.IsCreated || radius < 0f || owner.UnitSize <= 0f) return false;
+
+            var radiusInCells = radius / owner.UnitSize;
+            var localCenter = (position - WorldOrigin) / owner.UnitSize;
+
+            var minX = math.clamp((int)math.floor(localCenter.x - radiusInCells), 0, ActualSize.x - 1);
+            var minY = math.clamp((int)math.floor(localCenter.y - radiusInCells), 0, ActualSize.y - 1);
+            var minZ = math.clamp((int)math.floor(localCenter.z - radiusInCells), 0, ActualSize.z - 1);
+            var maxX = math.clamp((int)math.ceil(localCenter.x + radiusInCells), 0, ActualSize.x - 1);
+            var maxY = math.clamp((int)math.ceil(localCenter.y + radiusInCells), 0, ActualSize.y - 1);
+            var maxZ = math.clamp((int)math.ceil(localCenter.z + radiusInCells), 0, ActualSize.z - 1);
+
+            if (minX > maxX || minY > maxY || minZ > maxZ) return false;
+
+            bool modified = false;
+            bool isFill = method == ModifyMethod.Fill;
+            var resolution = owner.Resolution;
+            var sliceStride = resolution * resolution;
+            var unitSize = owner.UnitSize;
+
+            var worldStartX = WorldOrigin.x + minX * unitSize;
+            var worldStartY = WorldOrigin.y + minY * unitSize;
+            var worldStartZ = WorldOrigin.z + minZ * unitSize;
             
-            for (var lz = 0; lz < ActualSize.z; lz++)
-            for (var ly = 0; ly < ActualSize.y; ly++)
-            for (var lx = 0; lx < ActualSize.x; lx++)
+            var worldZ = worldStartZ;
+            for (var lz = minZ; lz <= maxZ; lz++, worldZ += unitSize)
             {
-                var worldPos = GetWorldPosition(lx, ly, lz);
-                // 미리 범위를 체크하여 구 계산의 상당 부분을 스킵 (박스 컬링)
-                if (math.abs(worldPos.x - position.x) > radius ||
-                    math.abs(worldPos.y - position.y) > radius ||
-                    math.abs(worldPos.z - position.z) > radius) continue;
+                var dz = worldZ - position.z;
+                var zBase = (OriginIndex.z + lz) * sliceStride;
 
-                var sdfValue = math.length(worldPos - position) - radius;
-                var flatIdx = FlattenGlobal(lx, ly, lz);
-                
-                var currentVal = fieldArray[flatIdx];
-                var currentFloat = (float)currentVal;
-                
-                // switch문과 math.half 변환이 이너 루프에서 계속 박싱/GC를 유발할 수 있으므로 분기문으로 변경
-                float newFloat = currentFloat;
-                if (method == ModifyMethod.Fill)
-                    newFloat = math.min(currentFloat, sdfValue);
-                else if (method == ModifyMethod.Carve)
-                    newFloat = math.max(currentFloat, -sdfValue);
-
-                var newVal = math.half(newFloat);
-                
-                if (currentVal.value != newVal.value)
+                var worldY = worldStartY;
+                for (var ly = minY; ly <= maxY; ly++, worldY += unitSize)
                 {
-                    fieldArray[flatIdx] = newVal;
-                    modified = true;
+                    var dy = worldY - position.y;
+                    var worldX = worldStartX;
+                    var flatIdx = OriginIndex.x + minX + (OriginIndex.y + ly) * resolution + zBase;
+
+                    for (var lx = minX; lx <= maxX; lx++, flatIdx++, worldX += unitSize)
+                    {
+                        var dx = worldX - position.x;
+                        var sdfValue = math.sqrt(dx * dx + dy * dy + dz * dz) - radius;
+
+                        var currentVal = fieldArray[flatIdx];
+                        var currentFloat = (float)currentVal;
+                        var newFloat = isFill
+                            ? math.min(currentFloat, sdfValue)
+                            : math.max(currentFloat, -sdfValue);
+
+                        var newVal = math.half(newFloat);
+                        if (currentVal.value == newVal.value) continue;
+
+                        fieldArray[flatIdx] = newVal;
+                        modified = true;
+                    }
                 }
             }
+
             if (modified)
             {
                 RefreshGizmo();
