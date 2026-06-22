@@ -1,4 +1,5 @@
-﻿using Unity.Burst;
+﻿using System;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -9,11 +10,10 @@ namespace Boids
     public class MultiThreadedBoids : MonoBehaviour
     {
         [Header("Spawn")]
-        [SerializeField] private GameObject boidPrefab;
         [SerializeField] private int boidsCount = 100;
         [SerializeField] private float cellSize = 1f;
         [SerializeField] private float initialSphereRadius = 1f;
-        [SerializeField] private float3 initialDirection = new float3(0.1f, 0.1f, 0.1f);
+        // [SerializeField] private float3 initialDirection = new float3(0.1f, 0.1f, 0.1f);
 
         [Header("Movement")]
         [SerializeField] private float maxSpeed = 5f;
@@ -38,38 +38,62 @@ namespace Boids
         [Header("Target")]
         [SerializeField] private Transform targetTransform;
         [SerializeField] private float targetFollowStrength = 1f;
-
-        private Transform[] boidTransforms;
+        
+        [Header("Render Settings")]
+        [SerializeField] private Mesh boidMesh;
+        [SerializeField] private Material boidMaterial;
+        [SerializeField] private Bounds worldBounds;
+        private RenderParams boidRenderParams;
         
         private NativeArray<float3> positions;
         private NativeArray<float3> velocities;
         private NativeArray<float3> nextPositions;
         private NativeArray<float3> nextVelocities;
+
+        private NativeArray<Matrix4x4> boidObjectToWorldMatrices;
+        
+        private NativeArray<float3> collisionForces;
+        private readonly Collider[] collisionBuffer = new Collider[16];
+        private const float Epsilon = 1e-6f;
+        
         private NativeParallelMultiHashMap<int, int> grid;
         
         private void Start()
         {
-            boidTransforms = new Transform[boidsCount];
-
             positions = new NativeArray<float3>(boidsCount, Allocator.Persistent);
             velocities = new NativeArray<float3>(boidsCount, Allocator.Persistent);
             nextPositions = new NativeArray<float3>(boidsCount, Allocator.Persistent);
             nextVelocities = new NativeArray<float3>(boidsCount, Allocator.Persistent);
+            
+            collisionForces = new NativeArray<float3>(boidsCount, Allocator.Persistent);
+            
+            boidObjectToWorldMatrices = new NativeArray<Matrix4x4>(boidsCount, Allocator.Persistent);
+            
             grid = new NativeParallelMultiHashMap<int, int>(boidsCount * 2, Allocator.Persistent);
 
-            for (int i = 0; i < boidsCount; i++)
-            {
-                var go = Instantiate(boidPrefab, transform);
-                boidTransforms[i] = go.transform;
+            boidRenderParams = new RenderParams(Instantiate(boidMaterial));
+            boidRenderParams.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            boidRenderParams.receiveShadows = true;
+            boidRenderParams.layer = gameObject.layer;
+            boidRenderParams.worldBounds = worldBounds;
 
-                positions[i] = (float3)transform.position + (float3)UnityEngine.Random.insideUnitSphere;
-                velocities[i] = math.normalizesafe(new float3(0.1f, 0.1f, 0.1f), new float3(0, 0, 1)) * maxSpeed;
+            for (var i = 0; i < boidsCount; i++)
+            {
+                var randomUnitSphereDirection = (float3)UnityEngine.Random.insideUnitSphere;
+
+                positions[i] = (float3)transform.position + randomUnitSphereDirection * initialSphereRadius;
+                velocities[i] = randomUnitSphereDirection * maxSpeed;
             }
         }
 
         private void FixedUpdate()
         {
             grid.Clear();
+
+            for (int i = 0; i < boidsCount; i++)
+            {
+                collisionForces[i] = CalculateCollisionForce(positions[i]);
+            }
 
             var buildGridJob = new BuildGridJob
             {
@@ -84,6 +108,8 @@ namespace Boids
                 Velocities = velocities,
                 NextPositions = nextPositions,
                 NextVelocities = nextVelocities,
+                CollisionForces = collisionForces,
+                ObjectToWorldMatrices = boidObjectToWorldMatrices,
                 Grid = grid,
                 DeltaTime = Time.fixedDeltaTime,
                 CellSize = cellSize,
@@ -104,11 +130,12 @@ namespace Boids
             (positions, nextPositions) = (nextPositions, positions);
             (velocities, nextVelocities) = (nextVelocities, velocities);
 
-            for (int i = 0; i < boidsCount; i++)
-            {
-                boidTransforms[i].position = positions[i];
-                boidTransforms[i].forward = math.normalizesafe(velocities[i], new float3(0, 0, 1));
-            }
+            // Debug.Log(boidObjectToWorldMatrices[0].m03);
+        }
+
+        private void Update()
+        {
+            RenderBoids();
         }
 
         private void OnDestroy()
@@ -117,7 +144,58 @@ namespace Boids
             if (velocities.IsCreated) velocities.Dispose();
             if (nextPositions.IsCreated) nextPositions.Dispose();
             if (nextVelocities.IsCreated) nextVelocities.Dispose();
+            if (collisionForces.IsCreated) collisionForces.Dispose();
+            if (boidObjectToWorldMatrices.IsCreated) boidObjectToWorldMatrices.Dispose();
             if (grid.IsCreated) grid.Dispose();
+        }
+
+        private void RenderBoids()
+        {
+            Graphics.RenderMeshInstanced(
+                boidRenderParams,
+                boidMesh,
+                0,
+                boidObjectToWorldMatrices, // ObjectToWorld Matrix
+                boidsCount,
+                0
+                );
+        }
+        
+        private float3 CalculateCollisionForce(float3 position)
+        {
+            int count = Physics.OverlapBoxNonAlloc(
+                position,
+                Vector3.one * collisionCheckHalfExtent,
+                collisionBuffer,
+                Quaternion.identity,
+                collisionLayerMask);
+
+            if (count == 0)
+                return float3.zero;
+
+            float3 totalForce = float3.zero;
+
+            for (int i = 0; i < count; i++)
+            {
+                Collider collider = collisionBuffer[i];
+                if (collider == null || !collider.enabled)
+                    continue;
+
+                float3 closestPoint = collider.ClosestPoint(position);
+                float3 away = position - closestPoint;
+                float awayDistanceSqr = math.lengthsq(away);
+
+                if (awayDistanceSqr < Epsilon)
+                {
+                    away = position - (float3)collider.bounds.center;
+                    awayDistanceSqr = maxCollisionResolveStrength / collisionResolveStrength;
+                }
+
+                float3 pushDir = math.normalizesafe(away, new float3(0f, 1f, 0f));
+                totalForce += pushDir * math.rsqrt(awayDistanceSqr) * collisionResolveStrength;
+            }
+
+            return ClampMagnitude(totalForce, maxCollisionResolveStrength);
         }
             
         [BurstCompile]
@@ -140,8 +218,10 @@ namespace Boids
         {
             [ReadOnly] public NativeArray<float3> Positions;
             [ReadOnly] public NativeArray<float3> Velocities;
+            [ReadOnly] public NativeArray<float3> CollisionForces;
             [ReadOnly] public NativeParallelMultiHashMap<int, int> Grid;
-
+            
+            [WriteOnly] public NativeArray<Matrix4x4> ObjectToWorldMatrices;
             [WriteOnly] public NativeArray<float3> NextPositions;
             [WriteOnly] public NativeArray<float3> NextVelocities;
 
@@ -157,6 +237,7 @@ namespace Boids
             public float SeparationStrength;
             public float AlignmentStrength;
             public float CohesionStrength;
+            
 
             public void Execute(int index)
             {
@@ -243,15 +324,19 @@ namespace Boids
                     float3 desired = math.normalizesafe(center - myPos, float3.zero) * MaxSpeed;
                     accel += ClampMagnitude(desired - myVel, MaxSteeringForce) * CohesionStrength;
                 }
+                
+                accel += CollisionForces[index];
 
                 float3 newVel = ClampMagnitude(myVel + accel * DeltaTime, MaxSpeed);
                 float3 newPos = myPos + newVel * DeltaTime;
+
+                var rotation = math.mul(quaternion.LookRotationSafe(newVel, math.up()), quaternion.RotateX(math.radians(90f)));
+                ObjectToWorldMatrices[index] = float4x4.TRS(newPos, rotation, new float3(0.1f, 0.1f, 0.1f));
 
                 NextVelocities[index] = newVel;
                 NextPositions[index] = newPos;
             }
         }
-
 
         private static int3 WorldToCell(float3 pos, float cellSize)
         {

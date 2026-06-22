@@ -1080,7 +1080,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Boids.MultiThreadedBoids
   boidsCount: 8192
-  cellSize: 1
+  cellSize: 0.75
   initialSphereRadius: 2
   maxSpeed: 5
   maxSteeringForce: 8
@@ -1090,7 +1090,7 @@ MonoBehaviour:
   separationStrength: 2
   alignmentStrength: 1
   cohesionStrength: 0.4
-  collisionCheckHalfExtent: 0.35
+  collisionCheckHalfExtent: 0.5
   collisionResolveStrength: 8
   maxCollisionResolveStrength: 30
   collisionLayerMask:
