@@ -65,7 +65,7 @@ Shader "Custom/Toon/Baked Outlined Lit"
         _OutlineColor("Outline Color", Color) = (0,0,0,1)
         _OutlineSize("Outline Size", Range(0.0, 10)) = 1
         _OutlineMinMaxSize("Outline Min Size", Vector, 2) = (0.01, 0.05, 0, 0)
-        
+        _OutlineZBias("Outline Z Bias", Float) = 0.002
     }
     SubShader
     {
@@ -107,6 +107,7 @@ Shader "Custom/Toon/Baked Outlined Lit"
             half4 _OutlineColor;
             half _OutlineSize;
             half2 _OutlineMinMaxSize;
+            half _OutlineZBias;
             
             CBUFFER_END
 
@@ -136,7 +137,7 @@ Shader "Custom/Toon/Baked Outlined Lit"
                 float2 offset = clipNormal * outlineSize;
                 clipPos.xy += offset * 2.0;
 
-                // clipPos.z -= 0.002 * clipPos.w;
+                clipPos.z -= _OutlineZBias ;
                 OUT.positionHCS = clipPos;
                 return OUT;
             }
