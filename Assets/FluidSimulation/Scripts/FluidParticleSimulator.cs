@@ -2,6 +2,7 @@ using System;
 using Sirenix.OdinInspector;
 using Unity.Burst;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Playground.FluidSimulation
 {
@@ -23,7 +24,7 @@ namespace Playground.FluidSimulation
         [SerializeField] private Bounds bounds;
         [SerializeField] int numParticles;
         [SerializeField] float particleMass = 1.0f;
-        [SerializeField, ReadOnly] float targetDensity = 1.0f;
+        [SerializeField, ReadOnly] float sampleDensity = 1.0f;
         [SerializeField, Range(0.1f, 3)] float densityMultiplier = 1.0f;
         [SerializeField] float pressureMultiplier = 1.0f;
         [SerializeField] private float smoothingRadius = 0.1f;
@@ -33,6 +34,8 @@ namespace Playground.FluidSimulation
         private float[] densities;
         private Vector4[] particlePositions;
         private Vector2[] predictedPositions;
+        
+        private float targetDensity => sampleDensity * densityMultiplier;
         
         private const float DensityEpsilon = 1e-6f;
         
@@ -57,7 +60,7 @@ namespace Playground.FluidSimulation
             predictedPositions = new Vector2[numParticles];
             particlePropertyBlock = new MaterialPropertyBlock();
             
-            targetDensity = CalibrateTargetDensity();
+            sampleDensity = CalibrateTargetDensity();
             InitializeParticles();
         }
 
@@ -96,30 +99,7 @@ namespace Playground.FluidSimulation
         
         private float CalibrateTargetDensity()
         {
-            return bounds.size.x * bounds.size.y * particleMass / numParticles;
-            // float total = 0f;
-            // int count = 0;
-            //
-            // for (int i = 0; i < numParticles; i++)
-            // {
-            //     Vector2 p = particles[i].position;
-            //
-            //     // 액체 블록 외곽은 이웃이 부족하므로 제외
-            //     bool isInterior =
-            //         p.x > bounds.min.x + smoothingRadius &&
-            //         p.x < bounds.max.x - smoothingRadius &&
-            //         p.y > bounds.min.y + smoothingRadius &&
-            //         p.y < bounds.max.y - smoothingRadius;
-            //
-            //     if (!isInterior)
-            //         continue;
-            //
-            //     total += CalculateDensity(i);
-            //     count++;
-            // }
-            //
-            // if (count > 0)
-            //     targetDensity = total / count;
+            return numParticles * particleMass / bounds.size.x * bounds.size.y;
         }
 
         private void InitializeParticles()

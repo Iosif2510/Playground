@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Custom_DensityField
-  m_Shader: {fileID: 4800000, guid: a7ffaaa1552577c49a85911ecc03bd5a, type: 3}
+  m_Name: Playground_Fluid Particle Indirect
+  m_Shader: {fileID: 4800000, guid: a3e0cc153aa047b39c87183c30fe56bd, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -25,10 +25,8 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
-    - _ColorSpread: 0.5
+    - _ParticleRenderSize: 0.1
     m_Colors:
-    - _NegCol: {r: 0, g: 0, b: 1, a: 1}
-    - _PosCol: {r: 1, g: 0, b: 0, a: 1}
-    - _ZeroCol: {r: 1, g: 1, b: 1, a: 1}
+    - _ParticleColor: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

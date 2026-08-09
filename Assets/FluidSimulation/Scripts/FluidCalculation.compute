@@ -1,0 +1,430 @@
+#pragma kernel PredictPositions
+#pragma kernel BuildSpatialHash
+#pragma kernel BitonicSort
+#pragma kernel ClearCellStartIndices
+#pragma kernel BuildCellStartIndices
+#pragma kernel CalculateDensities
+#pragma kernel CalculatePressureAndIntegrate
+
+#define THREADS_PER_GROUP 256
+#define EMPTY_KEY 0xFFFFFFFFu
+
+#define PI 3.14159265358979323846
+
+struct Particle
+{
+    float2 position;
+    float2 velocity;
+};
+
+struct SpatialHashEntry
+{
+    uint hash;
+    uint particleIndex;
+    int2 cell;
+};
+
+RWStructuredBuffer<Particle> _Particles;
+RWStructuredBuffer<float2> _PredictedPositions;
+RWStructuredBuffer<float> _Densities;
+RWStructuredBuffer<float> _NearDensities;
+RWStructuredBuffer<SpatialHashEntry> _SpatialHashEntries;
+RWStructuredBuffer<uint> _CellStartIndices;
+
+uint _ParticleCount;
+uint _SortCount;
+uint _CellTableSize;
+
+uint _BitonicK;
+uint _BitonicJ;
+
+float _DeltaTime;
+float _Gravity;
+float _BoundaryDamping;
+
+float _ParticleMass;
+float _TargetDensity;
+float _PressureMultiplier;
+float _SmoothingRadius;
+float _CellSize;
+
+float _PredictionTime;
+
+float2 _BoundsMin;
+float2 _BoundsMax;
+
+float _GrabRadius;
+
+float SpikyKernel(float radius, float distance)
+{
+    if (distance >= radius)
+        return 0;
+
+    float volume = PI * pow(radius, 4) / 6.0;
+    return pow(radius - distance, 2) / volume;
+}
+
+float SpikyKernelDerivative(float radius, float distance)
+{
+    if (distance >= radius)
+        return 0;
+
+    float volume = PI * pow(radius, 4) / 6.0;
+    return -2.0 * (radius - distance) / volume;
+}
+
+float NearKernel(float radius, float dst)
+{
+    if (dst >= radius) return 0;
+
+    // [More Spiky Kernel]
+    float volume = PI * pow(radius, 5) / 10.0;
+    return pow(radius - dst, 3) / volume;
+}
+
+float NearKernelDerivative(float radius, float dst)
+{
+    if (dst >= radius) return 0;
+
+    // [More Spiky Kernel]
+    float volume = PI * pow(radius, 5) / 10.0;
+    return -3.0 * pow(radius - dst, 2) / volume;
+}
+
+int2 PositionToCell(float2 position)
+{
+    return (int2)floor((position - _BoundsMin) / _CellSize);
+}
+
+uint HashCell(int2 cell)
+{
+    uint x = asuint(cell.x);
+    uint y = asuint(cell.y);
+
+    uint hash = x * 15823u + y * 9737333u;
+    return hash & (_CellTableSize - 1);
+}
+
+float DensityToPressure(float density)
+{
+    return (density - _TargetDensity) * _PressureMultiplier;
+
+    // Tensile instability를 먼저 제거하고 싶을 때:
+    // return max(0, density - _TargetDensity) * _PressureMultiplier;
+}
+
+float NearDensityToPressure(float nearDensity)
+{
+    return nearDensity * _PressureMultiplier;
+}
+
+[numthreads(THREADS_PER_GROUP, 1, 1)]
+void PredictPositions(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= _ParticleCount) return;
+
+    Particle particle = _Particles[i];
+    _PredictedPositions[i] =
+        particle.position + particle.velocity * _PredictionTime;
+}
+
+[numthreads(THREADS_PER_GROUP, 1, 1)]
+void BuildSpatialHash(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+
+    if (i >= _SortCount)
+        return;
+
+    SpatialHashEntry entry;
+
+    // Bitonic sort padding entry:
+    // max hash는 정렬 마지막으로 이동한다.
+    if (i >= _ParticleCount)
+    {
+        entry.hash = EMPTY_KEY;
+        entry.particleIndex = 0;
+        entry.cell = int2(0, 0);
+    }
+    else
+    {
+        int2 cell = PositionToCell(_PredictedPositions[i]);
+
+        entry.hash = HashCell(cell);
+        entry.particleIndex = i;
+        entry.cell = cell;
+    }
+
+    _SpatialHashEntries[i] = entry;
+}
+
+[numthreads(THREADS_PER_GROUP, 1, 1)]
+void BitonicSort(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+
+    if (i >= _SortCount)
+        return;
+
+    uint pairedIndex = i ^ _BitonicJ;
+
+    if (pairedIndex <= i || pairedIndex >= _SortCount)
+        return;
+
+    SpatialHashEntry a = _SpatialHashEntries[i];
+    SpatialHashEntry b = _SpatialHashEntries[pairedIndex];
+
+    bool ascending = (i & _BitonicK) == 0;
+    bool shouldSwap = ascending
+        ? a.hash > b.hash
+        : a.hash < b.hash;
+
+    if (shouldSwap)
+    {
+        _SpatialHashEntries[i] = b;
+        _SpatialHashEntries[pairedIndex] = a;
+    }
+}
+
+[numthreads(THREADS_PER_GROUP, 1, 1)]
+void ClearCellStartIndices(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+
+    if (i >= _CellTableSize)
+        return;
+
+    _CellStartIndices[i] = EMPTY_KEY;
+}
+
+[numthreads(THREADS_PER_GROUP, 1, 1)]
+void BuildCellStartIndices(uint3 id : SV_DispatchThreadID)
+{
+    uint sortedIndex = id.x;
+
+    if (sortedIndex >= _ParticleCount)
+        return;
+
+    SpatialHashEntry current = _SpatialHashEntries[sortedIndex];
+
+    bool isFirstForHash =
+        sortedIndex == 0 ||
+        _SpatialHashEntries[sortedIndex - 1].hash != current.hash;
+
+    if (isFirstForHash)
+        _CellStartIndices[current.hash] = sortedIndex;
+}
+
+struct DensityPair
+{
+    float density;
+    float nearDensity;
+};
+
+DensityPair CalculateDensityAt(uint particleIndex)
+{
+    float2 position = _PredictedPositions[particleIndex];
+    int2 centerCell = PositionToCell(position);
+
+    float density = 0;
+    float nearDensity = 0;
+
+    for (int y = -1; y <= 1; y++)
+    {
+        for (int x = -1; x <= 1; x++)
+        {
+            int2 targetCell = centerCell + int2(x, y);
+            uint targetHash = HashCell(targetCell);
+            uint startIndex = _CellStartIndices[targetHash];
+
+            if (startIndex == EMPTY_KEY)
+                continue;
+
+            for (uint sortedIndex = startIndex;
+                 sortedIndex < _ParticleCount;
+                 sortedIndex++)
+            {
+                SpatialHashEntry entry =
+                    _SpatialHashEntries[sortedIndex];
+
+                if (entry.hash != targetHash)
+                    break;
+
+                // Hash collision 및 이웃 cell hash 중복 방지
+                if (any(entry.cell != targetCell))
+                    continue;
+
+                uint otherIndex = entry.particleIndex;
+                float2 offset =
+                    _PredictedPositions[otherIndex] - position;
+
+                float distanceSq = dot(offset, offset);
+
+                if (distanceSq >= _SmoothingRadius * _SmoothingRadius)
+                    continue;
+
+                density += _ParticleMass *
+                    SpikyKernel(_SmoothingRadius, sqrt(distanceSq));
+                nearDensity += _ParticleMass *
+                    NearKernel(_SmoothingRadius, sqrt(distanceSq));
+            }
+        }
+    }
+    
+    DensityPair result;
+
+    result.density = density;
+    result.nearDensity = nearDensity;
+    return result;
+}
+
+[numthreads(THREADS_PER_GROUP, 1, 1)]
+void CalculateDensities(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+
+    if (i >= _ParticleCount)
+        return;
+
+    // Self contribution은 target density calibration과 동일하게 포함.
+    DensityPair pair = CalculateDensityAt(i);
+    _Densities[i] = pair.density;
+    _NearDensities[i] = pair.nearDensity;
+}
+
+float2 CalculatePressureForce(uint particleIndex)
+{
+    float2 position = _PredictedPositions[particleIndex];
+    int2 centerCell = PositionToCell(position);
+
+    float densityI = max(_Densities[particleIndex], 1e-6);
+    float nearDensityI = max(_NearDensities[particleIndex], 1e-6);
+    float pressureI = DensityToPressure(densityI);
+    float nearPressureI = NearDensityToPressure(nearDensityI);
+
+    float2 pressureForce = 0;
+
+    for (int y = -1; y <= 1; y++)
+    {
+        for (int x = -1; x <= 1; x++)
+        {
+            int2 targetCell = centerCell + int2(x, y);
+            uint targetHash = HashCell(targetCell);
+            uint startIndex = _CellStartIndices[targetHash];
+
+            if (startIndex == EMPTY_KEY)
+                continue;
+
+            for (uint sortedIndex = startIndex;
+                 sortedIndex < _ParticleCount;
+                 sortedIndex++)
+            {
+                SpatialHashEntry entry =
+                    _SpatialHashEntries[sortedIndex];
+
+                if (entry.hash != targetHash)
+                    break;
+
+                if (any(entry.cell != targetCell))
+                    continue;
+
+                uint otherIndex = entry.particleIndex;
+
+                if (otherIndex == particleIndex)
+                    continue;
+
+                float2 offset =
+                    _PredictedPositions[otherIndex] - position;
+
+                float distanceSq = dot(offset, offset);
+
+                if (distanceSq <= 1e-10 ||
+                    distanceSq >= _SmoothingRadius * _SmoothingRadius)
+                {
+                    continue;
+                }
+
+                float distance = sqrt(distanceSq);
+                float2 direction = offset / distance;
+
+                float densityJ = max(_Densities[otherIndex], 1e-6);
+                float pressureJ = DensityToPressure(densityJ);
+                float nearDensityJ = max(_NearDensities[otherIndex], 1e-6);
+                float nearPressureJ = NearDensityToPressure(nearDensityJ);
+
+                float sharedPressure =
+                    (pressureI + pressureJ) * 0.5;
+
+                float slope =
+                    SpikyKernelDerivative(_SmoothingRadius, distance);
+
+                pressureForce +=
+                    direction *
+                    (sharedPressure * slope * _ParticleMass / densityJ);
+                
+                float sharedNearPressure = (nearPressureI + nearPressureJ) * 0.5;
+                slope = NearKernelDerivative(_SmoothingRadius, distance);
+                pressureForce += direction * sharedNearPressure * slope * _ParticleMass / densityJ;
+            }
+        }
+    }
+
+    return pressureForce;
+}
+
+[numthreads(THREADS_PER_GROUP, 1, 1)]
+void CalculatePressureAndIntegrate(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+
+    if (i >= _ParticleCount)
+        return;
+
+    Particle particle = _Particles[i];
+
+    float density = max(_Densities[i], 1e-6);
+    float2 pressureForce = CalculatePressureForce(i);
+    float2 pressureAcceleration = pressureForce / density;
+
+    particle.velocity += pressureAcceleration * _DeltaTime;
+    particle.velocity.y += _Gravity * _DeltaTime;
+
+    particle.position += particle.velocity * _DeltaTime;
+    
+    float wallMargin = 0.05; // particleRenderSize 또는 spacing의 약 0.5배
+    float2 minPos = _BoundsMin + wallMargin;
+    float2 maxPos = _BoundsMax - wallMargin;
+
+    if (particle.position.x < minPos.x)
+    {
+        particle.position.x = minPos.x;
+
+        if (particle.velocity.x < 0.0)
+            particle.velocity.x = -particle.velocity.x * _BoundaryDamping;
+    }
+    else if (particle.position.x > maxPos.x)
+    {
+        particle.position.x = maxPos.x;
+
+        if (particle.velocity.x > 0.0)
+            particle.velocity.x = -particle.velocity.x * _BoundaryDamping;
+    }
+
+    if (particle.position.y < minPos.y)
+    {
+        particle.position.y = minPos.y;
+
+        if (particle.velocity.y < 0.0)
+            particle.velocity.y = -particle.velocity.y * _BoundaryDamping;
+    }
+    else if (particle.position.y > maxPos.y)
+    {
+        particle.position.y = maxPos.y;
+
+        if (particle.velocity.y > 0.0)
+            particle.velocity.y = -particle.velocity.y * _BoundaryDamping;
+    }
+
+    _Particles[i] = particle;
+}
